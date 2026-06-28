@@ -1,181 +1,134 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark" class="no-js">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Jaskaran Singh — Assistant Director, NIC · MeitY</title>
-  <meta name="description" content="Jaskaran Singh — Assistant Director at the National Informatics Centre (MeitY, Govt. of India). Government-technology leader building India's Open Government Data platform (data.gov.in). Ex-McKinsey Data Scientist. AI/ML, data engineering, e-governance — and shipped systems across web, Android, ML and research." />
-  <meta name="theme-color" content="#06080d" />
+  <meta name="description" content="Jaskaran Singh — Assistant Director at the National Informatics Centre (MeitY, Govt. of India). Building India's Open Government Data platform (data.gov.in). Ex-McKinsey Data Scientist. AI/ML, data engineering, e-governance, and shipped projects across web, Android and research." />
+  <meta name="theme-color" content="#f8f4ec" />
 
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="Jaskaran Singh — Engineering India's data infrastructure" />
-  <meta property="og:description" content="Assistant Director, NIC · MeitY. Building India's Open Government Data platform at national scale. Ex-McKinsey Data Scientist, engineer & researcher." />
+  <meta property="og:title" content="Jaskaran Singh — Assistant Director, NIC · MeitY" />
+  <meta property="og:description" content="Building India's Open Government Data platform at national scale. Ex-McKinsey Data Scientist, engineer & researcher." />
   <meta property="og:image" content="assets/img/avatar.png" />
   <meta property="og:url" content="https://sudo-karan.github.io/" />
-  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:card" content="summary_large_image" />
 
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%2306080d'/%3E%3Ctext x='50' y='70' font-family='Georgia,serif' font-size='62' font-weight='700' fill='%235eead4' text-anchor='middle'%3EJ%3C/text%3E%3C/svg%3E" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23f8f4ec'/%3E%3Ctext x='50' y='72' font-family='Georgia,serif' font-size='64' font-weight='700' fill='%236d28d9' text-anchor='middle'%3EJ%3C/text%3E%3C/svg%3E" />
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500;1,9..144,600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
 
   <link rel="stylesheet" href="assets/css/styles.css" />
 </head>
 <body>
-  <canvas id="substrate" aria-hidden="true"></canvas>
-
-  <!-- top bar -->
-  <header class="topbar" id="topbar">
-    <a class="mark" href="#top"><span class="pip"></span> <b>Jaskaran Singh</b> <span class="dim">/ sudo-karan</span></a>
-    <nav id="navlinks" aria-label="Sections"></nav>
-    <div class="topbar-tools">
-      <button class="kbd desk-kbd" id="cmdkBtn" aria-label="Open command palette"><kbd>⌘</kbd><kbd>K</kbd></button>
-      <button class="iconbtn theme-toggle" id="themeBtn" aria-label="Toggle theme">
-        <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
-        <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
-      </button>
-      <button class="iconbtn" id="menuBtn" aria-label="Open menu">
+  <nav class="nav" id="nav">
+    <div class="nav-in">
+      <a href="#top" class="brand">Jaskaran Singh<span class="dot">.</span></a>
+      <div class="nav-links" id="navLinks"></div>
+      <button class="nav-burger" id="burger" aria-label="Menu">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
       </button>
     </div>
-  </header>
+  </nav>
 
   <main id="top">
     <!-- HERO -->
-    <header class="hero" id="hero">
-      <div class="shell">
-        <div class="hero-eyebrow" id="heroEyebrow">
-          <span class="pip"></span><span id="heroStatus" class="mono"></span><span class="er"></span>
+    <header class="hero">
+      <div class="wrap">
+        <div class="hero-grid">
+          <div class="hero-text">
+            <span class="label" id="heroEyebrow"></span>
+            <h1 id="heroName"></h1>
+            <p class="role" id="heroRole"></p>
+            <p class="lede" id="heroLede"></p>
+            <div class="hero-cta" id="heroCta"></div>
+            <div class="hero-meta" id="heroMeta"></div>
+          </div>
+          <div class="portrait">
+            <div class="frame"><img id="heroPhoto" alt="Jaskaran Singh" /></div>
+            <div class="tagchip"><span class="pin"></span> Open to opportunities</div>
+          </div>
         </div>
-        <h1 id="heroHeadline"></h1>
-        <p class="hero-sub" id="heroSub"></p>
-        <div class="hero-readouts" id="heroReadouts"></div>
-        <div class="hero-cta" id="heroCta"></div>
-        <div class="scrollcue"><span class="bar"></span> SCROLL TO INGEST</div>
       </div>
     </header>
 
-    <section id="about"><div class="shell">
-      <div class="folio reveal"><span class="idx">01</span> <span class="ttl">The Operator</span></div>
-      <div class="about-grid">
-        <div class="reveal">
-          <p class="lede" id="aboutLede"></p>
-          <p class="about-tail" id="aboutTail"></p>
-        </div>
-        <aside class="glance reveal">
-          <h4>AT A GLANCE</h4>
-          <div id="glanceRows"></div>
-          <div class="byline">
-            <img id="bylineImg" alt="Jaskaran Singh" />
-            <div class="who"><b>By sudo-karan</b><br><span>author of national infrastructure</span></div>
+    <div class="pillars"><div class="wrap" id="pillars"></div></div>
+
+    <!-- ABOUT -->
+    <section id="about">
+      <div class="wrap">
+        <div class="sec-head reveal"><span class="label">About</span><h2>A technologist building public infrastructure.</h2></div>
+        <div class="about-grid">
+          <div class="reveal">
+            <p class="about-lede" id="aboutLede"></p>
+            <p class="about-body" id="aboutBody"></p>
           </div>
-        </aside>
-      </div>
-    </div></section>
-
-    <section id="numbers"><div class="shell">
-      <div class="folio reveal"><span class="idx">02</span> <span class="ttl">By the Numbers</span></div>
-      <div class="numbers-grid" id="numbersGrid"></div>
-    </div></section>
-
-    <section id="experience"><div class="shell">
-      <div class="folio reveal"><span class="idx">03</span> <span class="ttl">The Career Column</span></div>
-      <h2 class="section-title reveal" style="margin-bottom:2.2rem; max-width:18ch;">A decade turning data into decisions.</h2>
-      <div class="career" id="career"></div>
-    </div></section>
-
-    <section id="systems"><div class="shell">
-      <div class="folio reveal"><span class="idx">04</span> <span class="ttl">Deployed Systems · Registry</span></div>
-      <h2 class="section-title reveal" style="margin-bottom:2.4rem; max-width:20ch;">Things I’ve built and shipped.</h2>
-      <div class="reg-chips" id="regChips" role="tablist" aria-label="Systems"></div>
-      <div class="registry">
-        <div class="reg-index" id="regIndex"></div>
-        <div class="reg-panel-wrap"><div id="regPanel"></div>
-          <div class="reg-count" id="regCount"></div>
+          <div class="about-stats" id="aboutStats"></div>
         </div>
       </div>
-    </div></section>
-
-    <section id="research"><div class="shell">
-      <div class="folio reveal"><span class="idx">05</span> <span class="ttl">Research · fmu</span></div>
-      <div class="research-head reveal">
-        <div class="research-kicker" id="resKicker"></div>
-        <h2 id="resTitle"></h2>
-        <p id="resBody"></p>
-      </div>
-    </div>
-    <div class="fusion" id="fusion">
-      <div class="fusion-sticky"><div class="shell" style="display:grid;place-items:center;">
-        <div class="fusion-stage" id="fusionStage">
-          <div class="fusion-layer fl-s1" id="flS1"></div>
-          <div class="fusion-layer fl-s2" id="flS2"></div>
-          <div class="fusion-grid"></div>
-          <svg id="fusionSvg" viewBox="0 0 720 450" preserveAspectRatio="none" aria-hidden="true"></svg>
-          <div class="fusion-hud">
-            <div class="fusion-legend">
-              <span><i class="i1"></i> S1 · SAR</span>
-              <span><i class="i2"></i> S2 · OPTICAL</span>
-            </div>
-            <div class="fusion-count"><b id="fusionCount">0</b> <span id="fusionCountLabel"></span></div>
-          </div>
-        </div>
-      </div></div>
-    </div>
-    <div class="shell"><div class="fusion-aside reveal">
-      <div class="pipeline" id="pipeline"></div>
-      <a class="btn" id="resCode" target="_blank" rel="noopener">View the pipeline →</a>
-    </div></div>
     </section>
 
-    <section id="toolkit"><div class="shell">
-      <div class="folio reveal"><span class="idx">06</span> <span class="ttl">Toolkit · Substrate</span></div>
-      <div class="toolkit-grid reveal" id="toolkitGrid"></div>
-    </div></section>
-
-    <section id="credentials"><div class="shell">
-      <div class="folio reveal"><span class="idx">07</span> <span class="ttl">Credentials · Ledger</span></div>
-      <div class="ledger">
-        <div class="reveal">
-          <h4>EDUCATION</h4>
-          <div id="eduList"></div>
-          <div class="langs" id="langs"></div>
+    <!-- WORK -->
+    <section id="work" class="alt">
+      <div class="wrap">
+        <div class="sec-head reveal"><span class="label">Selected Work</span><h2>Things I’ve built &amp; shipped.</h2>
+          <p>Installable PWAs, Android apps, ML pipelines and systems work — most with a live demo or source you can read right now.</p>
         </div>
-        <div class="reveal">
-          <h4>CERTIFICATIONS</h4>
-          <div id="certList"></div>
+        <div class="filters reveal" id="filters"></div>
+        <div class="work-grid" id="workGrid"></div>
+        <div class="see-all reveal">
+          <a class="btn" id="allRepos" target="_blank" rel="noopener">Browse all repositories on GitHub →</a>
         </div>
       </div>
-    </div></section>
+    </section>
 
-    <section id="contact" class="contact"><div class="shell">
-      <div class="folio reveal" style="justify-content:center;"><span class="idx">08</span> <span class="ttl">Open Channel</span></div>
-      <h2 class="big reveal">Let’s build something that <em>matters</em>.</h2>
-      <p class="sub reveal">Open to conversations on AI/ML, open data, applied research and cross-sector innovation. The fastest way to reach me is email.</p>
-      <div class="contact-actions reveal" id="contactActions"></div>
-    </div></section>
+    <!-- EXPERIENCE -->
+    <section id="experience">
+      <div class="wrap">
+        <div class="sec-head reveal"><span class="label">Experience</span><h2>A decade turning data into decisions.</h2></div>
+        <div class="exp" id="exp"></div>
+      </div>
+    </section>
+
+    <!-- SKILLS -->
+    <section id="skills" class="alt">
+      <div class="wrap">
+        <div class="sec-head reveal"><span class="label">Toolkit</span><h2>Skills &amp; technologies.</h2></div>
+        <div class="skills-grid" id="skillsGrid"></div>
+      </div>
+    </section>
+
+    <!-- CREDENTIALS -->
+    <section id="credentials">
+      <div class="wrap">
+        <div class="sec-head reveal"><span class="label">Credentials</span><h2>Education &amp; certifications.</h2></div>
+        <div class="cred-grid">
+          <div class="panel reveal"><h3>Education</h3><div id="eduList"></div><div class="langs" id="langs"></div></div>
+          <div class="panel reveal"><h3>Certifications</h3><div id="certList"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CONTACT -->
+    <section id="contact">
+      <div class="wrap">
+        <div class="contact-card reveal">
+          <h2>Let’s build something that matters.</h2>
+          <p>Open to conversations on AI/ML, open data, applied research and cross-sector innovation. The fastest way to reach me is email.</p>
+          <div class="contact-actions" id="contactActions"></div>
+        </div>
+      </div>
+    </section>
   </main>
 
   <footer>
-    <div class="shell">
-      <span class="sign">© <span id="year"></span> Jaskaran Singh — Assistant Director, NIC · MeitY</span>
-      <span id="footerLinks"></span>
-      <span class="sign">Built from a single data file · static on GitHub Pages</span>
+    <div class="wrap">
+      <span>© <span id="year"></span> Jaskaran Singh — Assistant Director, NIC · MeitY</span>
+      <span class="socials" id="footerSocials"></span>
     </div>
   </footer>
-
-  <!-- command palette -->
-  <div class="cmdk" id="cmdk" role="dialog" aria-modal="true" aria-label="Command palette">
-    <div class="cmdk-scrim" id="cmdkScrim"></div>
-    <div class="cmdk-box">
-      <div class="cmdk-in">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-        <input id="cmdkInput" type="text" placeholder="Jump to a section, open a live demo, download résumé…" autocomplete="off" spellcheck="false" />
-      </div>
-      <div class="cmdk-list" id="cmdkList"></div>
-      <div class="cmdk-foot"><span>↑↓ navigate</span><span>↵ select</span><span>esc close</span></div>
-    </div>
-  </div>
 
   <script src="assets/js/data.js"></script>
   <script src="assets/js/app.js"></script>
