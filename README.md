@@ -3,7 +3,7 @@
 Personal portfolio / résumé site for **Jaskaran Singh** — Assistant Director,
 National Informatics Centre (NIC · MeitY), Government of India.
 
-Live at **https://sudo-karan.github.io**
+Live at **https://karan98.in**
 
 A single-page, dark-first (with light toggle) portfolio. No framework, no build
 step — just HTML, CSS and vanilla JS, served straight off GitHub Pages.
