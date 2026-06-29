@@ -225,28 +225,79 @@
 
       submitBtn.disabled = true;
       setStatus("Sending…", "");
-      v.token = token;
 
-      fetch(S.contact.formEndpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(v)
-      }).then(function (r) {
-        return r.json().catch(function () { return { ok: false, error: "bad-response" }; });
-      }).then(function (j) {
-        if (j && j.ok) {
-          form.innerHTML = '<div class="form-done"><div class="big">Message sent ✓</div><p>Thanks, ' +
-            esc(v.name.split(" ")[0] || "there") + " — I’ll get back to you at " + esc(v.email) + " soon.</p></div>";
-        } else {
-          submitBtn.disabled = false;
-          if (window.turnstile && widgetId != null) window.turnstile.reset(widgetId);
-          setStatus('Something went wrong. Please <a href="' + mailtoFallback(v) + '">email me directly</a>.', "err");
-        }
+      gatherMeta().then(function (meta) {
+        var payload = {
+          token: token,
+          fields: { name: v.name, email: v.email, subject: v.subject, org: v.org, message: v.message },
+          meta: meta
+        };
+        // Apps Script can't return CORS headers, so we POST as a "simple request"
+        // (text/plain → no preflight) in no-cors mode: the request reaches the
+        // script (which records + emails); the response is opaque to us, so we
+        // confirm optimistically once it's sent.
+        return fetch(S.contact.formEndpoint, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify(payload)
+        });
+      }).then(function () {
+        form.innerHTML = '<div class="form-done"><div class="big">Message sent ✓</div><p>Thanks, ' +
+          esc(v.name.split(" ")[0] || "there") + " — I’ll get back to you at " + esc(v.email) + " soon.</p></div>";
       }).catch(function () {
         submitBtn.disabled = false;
-        setStatus('Couldn’t reach the server. Please <a href="' + mailtoFallback(v) + '">email me directly</a>.', "err");
+        if (window.turnstile && widgetId != null) window.turnstile.reset(widgetId);
+        setStatus('Couldn’t send right now. Please <a href="' + mailtoFallback(v) + '">email me directly</a>.', "err");
       });
     });
+  }
+
+  // Best-effort, silent metadata (no permission prompt): browser/OS from UA,
+  // locale/referrer/timezone, and IP-based geo/ISP from a free lookup.
+  function uaParse(ua) {
+    ua = ua || "";
+    var os = "Unknown";
+    if (/Windows NT 10/.test(ua)) os = "Windows 10/11";
+    else if (/Windows NT/.test(ua)) os = "Windows";
+    else if (/iPhone|iPad|iPod/.test(ua)) os = "iOS";
+    else if (/Android/.test(ua)) { var am = ua.match(/Android (\d+(\.\d+)?)/); os = am ? "Android " + am[1] : "Android"; }
+    else if (/Mac OS X/.test(ua)) os = "macOS";
+    else if (/Linux/.test(ua)) os = "Linux";
+    var br = "Unknown", m;
+    if ((m = ua.match(/Edg\/(\d+(\.\d+)?)/))) br = "Edge " + m[1];
+    else if ((m = ua.match(/OPR\/(\d+(\.\d+)?)/))) br = "Opera " + m[1];
+    else if (/Chrome\//.test(ua) && (m = ua.match(/Chrome\/(\d+(\.\d+)?)/))) br = "Chrome " + m[1];
+    else if (/Firefox\//.test(ua) && (m = ua.match(/Firefox\/(\d+(\.\d+)?)/))) br = "Firefox " + m[1];
+    else if (/Safari/.test(ua) && (m = ua.match(/Version\/(\d+(\.\d+)?)/))) br = "Safari " + m[1];
+    return { browser: br, platform: os };
+  }
+  function gatherMeta() {
+    var d = uaParse(navigator.userAgent);
+    var meta = {
+      submittedAt: new Date().toISOString(),
+      userAgent: navigator.userAgent,
+      browser: d.browser,
+      platform: d.platform,
+      language: navigator.language || "",
+      referer: document.referrer || "",
+      screen: (window.screen ? window.screen.width + "x" + window.screen.height : ""),
+      timezone: (function () { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { return ""; } })(),
+      accuracy: "ip"
+    };
+    return fetch("https://ipwho.is/", { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (g) {
+        if (g && g.success !== false) {
+          meta.ip = g.ip || ""; meta.city = g.city || ""; meta.state = g.region || "";
+          meta.country = g.country || ""; meta.postal = g.postal || "";
+          meta.latitude = g.latitude || ""; meta.longitude = g.longitude || "";
+          if (g.connection) { meta.isp = g.connection.isp || g.connection.org || ""; meta.asn = g.connection.asn || ""; }
+          if (g.timezone && g.timezone.id) meta.timezone = g.timezone.id;
+        }
+        return meta;
+      })
+      .catch(function () { return meta; }); // geo is best-effort; never block submit
   }
 
   function wireReveal() {
