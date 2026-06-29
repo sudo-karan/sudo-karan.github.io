@@ -41,7 +41,7 @@ window.SITE = {
     // (sudo-karan.github.io), which can't run Functions itself. On karan98.in
     // this is just a same-origin request. Set it to your Cloudflare domain.
     formEndpoint: "https://karan98.in/api/contact",
-    turnstileSiteKey: "1x00000000000000000000AA",
+    turnstileSiteKey: "0x4AAAAAADsvK3etT1iNEaDP",
   },
 
   nav: [
