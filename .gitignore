@@ -1,0 +1,11 @@
+# Local Cloudflare Pages dev secrets — NEVER commit
+.dev.vars
+.dev.vars.*
+
+# Wrangler / Cloudflare
+.wrangler/
+node_modules/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
