@@ -199,14 +199,17 @@ section { padding: clamp(3.8rem, 9vw, 7rem) 0; position: relative; }
 .filter:hover { color: var(--ink); border-color: var(--violet-2); }
 .filter.active { background: var(--violet); color: #fff; border-color: transparent; font-weight: 600; }
 
-.work-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.3rem; }
+.work-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.3rem; align-items: stretch; }
 .card {
+  position: relative; overflow: hidden;
   background: var(--card); border: 1px solid var(--line); border-radius: 20px;
   padding: 1.6rem; display: flex; flex-direction: column; gap: 0.85rem;
   box-shadow: var(--shadow-sm); transition: transform .3s var(--ease), box-shadow .3s var(--ease), border-color .2s;
 }
 .card:hover { transform: translateY(-5px); box-shadow: var(--shadow); border-color: transparent; }
-.card.feat { grid-column: span 2; }
+/* featured: a subtle violet top accent + tinted border — hierarchy without size */
+.card.feat { border-color: color-mix(in srgb, var(--violet) 32%, var(--line)); }
+.card.feat::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--violet), var(--violet-2)); }
 .card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.8rem; }
 .card h3 { font-family: var(--serif); font-weight: 600; font-size: 1.4rem; line-height: 1.15; }
 .card .badge { flex: none; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--violet-deep); background: var(--violet-tint); border-radius: 999px; padding: 0.3rem 0.65rem; }
@@ -237,8 +240,9 @@ section { padding: clamp(3.8rem, 9vw, 7rem) 0; position: relative; }
 .tag { font-size: 0.74rem; color: var(--ink-2); border: 1px solid var(--line); border-radius: 999px; padding: 0.26rem 0.65rem; }
 
 /* ---- skills ------------------------------------------------------------- */
-.skills-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1.2rem; }
-.skill-card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 1.5rem; box-shadow: var(--shadow-sm); }
+/* masonry columns pack the variable-height cards evenly — no lone card, no stretch */
+.skills-grid { column-count: 3; column-gap: 1.2rem; }
+.skill-card { break-inside: avoid; -webkit-column-break-inside: avoid; margin-bottom: 1.2rem; background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 1.5rem; box-shadow: var(--shadow-sm); }
 .skill-card h4 { font-size: 0.75rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--violet); margin-bottom: 1rem; }
 .skill-card .items { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .skill-card .it { font-size: 0.85rem; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 0.35rem 0.7rem; }
@@ -303,10 +307,12 @@ footer .socials { display: flex; gap: 0.8rem; }
   .card.feat { grid-column: span 1; }
   .cred-grid { grid-template-columns: 1fr; }
   .build-card { grid-template-columns: 1fr; }
+  .skills-grid { column-count: 2; }
 }
 @media (max-width: 560px) {
   body { font-size: 16px; }
   .work-grid { grid-template-columns: 1fr; }
+  .skills-grid { column-count: 1; }
   .about-stats { grid-template-columns: 1fr; }
   .hero-cta .btn, .contact-actions .btn { flex: 1 1 auto; justify-content: center; }
   .pillars .wrap { gap: 0.5rem 1.4rem; }
