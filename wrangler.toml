@@ -1,0 +1,8 @@
+# Cloudflare Pages configuration.
+# Declares this repo as a Pages project whose static output is the repo root and
+# whose serverless Functions live in /functions (so /api/contact deploys as a
+# Pages Function). Without this, a dashboard-configured static-only project can
+# skip the functions/ directory.
+name = "sudo-karan-github-io"
+compatibility_date = "2024-11-06"
+pages_build_output_dir = "."
