@@ -32,15 +32,11 @@ window.SITE = {
     githubUser: "sudo-karan",
     linkedin: "https://www.linkedin.com/in/karan98",
     resume: "assets/Jaskaran_Singh_Resume.pdf",
-    // Contact form. Replace turnstileSiteKey with your real Cloudflare Turnstile
-    // site key (see CONTACT_FORM_SETUP.md). The default is Turnstile's public
-    // "always passes" TEST key so the form works on preview before setup.
-    //
-    // formEndpoint is the ABSOLUTE URL of the Cloudflare Pages Function so the
-    // form works from ANY origin — including the GitHub Pages mirror
-    // (sudo-karan.github.io), which can't run Functions itself. On karan98.in
-    // this is just a same-origin request. Set it to your Cloudflare domain.
-    formEndpoint: "https://karan98.in/api/contact",
+    // Contact form posts straight to a Google Apps Script web app (no Cloudflare
+    // Function needed — works from any host). Turnstile is verified inside the
+    // Apps Script; metadata (IP/geo/browser) is gathered client-side. See
+    // CONTACT_FORM_SETUP.md.
+    formEndpoint: "https://script.google.com/macros/s/AKfycbyMVM94kcfpOcLUoHHC3ZHUbPhd7VEC6bbK0806nR5JYRowqXsGEvYFPGYM7URbFOmx5w/exec",
     turnstileSiteKey: "0x4AAAAAADsvK3etT1iNEaDP",
   },
 
