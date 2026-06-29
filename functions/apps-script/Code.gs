@@ -22,6 +22,7 @@ function doPost(e) {
 
     var data = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     var f = data.fields || {}, m = data.meta || {};
+    Logger.log('doPost: hasToken=%s secretConfigured=%s fields=%s', !!data.token, !!secret, JSON.stringify(f));
 
     // Verify Cloudflare Turnstile (the bot check). Secret stays here, server-side.
     if (secret) {
@@ -32,11 +33,14 @@ function doPost(e) {
       });
       var vr = {};
       try { vr = JSON.parse(resp.getContentText()); } catch (e2) {}
+      Logger.log('turnstile: success=%s codes=%s', vr.success, JSON.stringify(vr['error-codes'] || []));
       if (!vr.success) return out({ ok: false, error: 'failed-captcha', codes: vr['error-codes'] || [] });
+    } else {
+      Logger.log('turnstile: SKIPPED (TURNSTILE_SECRET not set)');
     }
 
     // Basic server-side validation (don't trust the client alone)
-    if (!f.name || !f.email || !f.subject || !f.message) return out({ ok: false, error: 'missing-fields' });
+    if (!f.name || !f.email || !f.subject || !f.message) { Logger.log('rejected: missing-fields'); return out({ ok: false, error: 'missing-fields' }); }
 
     var ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
     var sh = ss.getSheets()[0];
@@ -50,6 +54,7 @@ function doPost(e) {
       ? Utilities.formatDate(new Date(m.submittedAt), 'Asia/Kolkata', 'dd MMM yyyy, hh:mm:ss a')
       : Utilities.formatDate(new Date(), 'Asia/Kolkata', 'dd MMM yyyy, hh:mm:ss a');
 
+    Logger.log('writing row + emailing %s', recipient);
     sh.appendRow([istTime, f.name, f.email, f.subject, f.org, f.message,
       m.ip, m.browser, m.platform, m.isp, m.asn, m.country, m.city, m.state, m.postal,
       m.latitude, m.longitude, m.accuracy, m.timezone, m.language, m.screen, m.referer, 'No', m.userAgent]);
@@ -78,8 +83,10 @@ function doPost(e) {
       name: 'karan98.in contact form'
     });
 
+    Logger.log('done: ok');
     return out({ ok: true });
   } catch (err) {
+    Logger.log('ERROR: ' + err);
     return out({ ok: false, error: String(err) });
   }
 }
