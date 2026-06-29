@@ -42,6 +42,7 @@
             <span class="label" id="heroEyebrow"></span>
             <h1 id="heroName"></h1>
             <p class="role" id="heroRole"></p>
+            <div class="creds" id="heroCreds"></div>
             <p class="lede" id="heroLede"></p>
             <div class="hero-cta" id="heroCta"></div>
             <div class="hero-meta" id="heroMeta"></div>
@@ -55,6 +56,36 @@
     </header>
 
     <div class="pillars"><div class="wrap" id="pillars"></div></div>
+
+    <!-- BUILDING NOW -->
+    <section id="building">
+      <div class="wrap">
+        <div class="build-card reveal">
+          <div class="build-main">
+            <span class="build-kicker" id="buildKicker"></span>
+            <h2 id="buildName"></h2>
+            <p class="build-blurb" id="buildBlurb"></p>
+            <ul class="build-highlights" id="buildHighlights"></ul>
+            <div class="build-tech" id="buildTech"></div>
+            <div class="build-actions" id="buildActions"></div>
+          </div>
+          <div class="build-aside" aria-hidden="true">
+            <div class="build-status"><span class="blip"></span> <span id="buildBadge"></span></div>
+            <div class="build-term">
+              <div class="dots"><i></i><i></i><i></i></div>
+              <pre><span class="c">$</span> ask "What is NDSAP?"
+<span class="g">▍ retrieving from data.gov.in corpus…</span>
+<span class="g">▍ 7 policy PDFs · local vector store</span>
+<span class="o">▍ generating — Ollama (offline)</span>
+
+The National Data Sharing and
+Accessibility Policy (NDSAP) governs
+how Indian government data is shared…</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <!-- ABOUT -->
     <section id="about">

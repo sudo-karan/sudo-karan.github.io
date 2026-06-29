@@ -11,13 +11,19 @@ window.SITE = {
     orgFull: "National Informatics Centre, Ministry of Electronics & IT — Government of India",
     location: "New Delhi, India",
     photo: "assets/img/avatar.png",
-    eyebrow: "Assistant Director · NIC · MeitY · Govt. of India",
+    eyebrow: "Government technologist · New Delhi, India",
+    // The three things that should land instantly. Rendered as bold hero badges.
+    creds: [
+      "Assistant Director — NIC, MeitY",
+      "PhD candidate — IIT Delhi",
+      "ex-McKinsey Data Scientist",
+    ],
     // Hero headline — serif. Kept short so it never overlaps.
     tagline: "Building India’s Open Government Data platform.",
     lede:
       "I work at the intersection of government, data and emerging technology. At the National Informatics Centre I lead the team building and scaling the national Open Government Data platform (data.gov.in) — unlocking high-value datasets that drive transparency and innovation across ministries, states and industry.",
     lede2:
-      "Before this I was a Data Scientist at McKinsey & Company. I care about turning data engineering, analytics and AI/ML into governance that reaches citizens — and I still ship code.",
+      "I'm also a doctoral researcher (PhD) at IIT Delhi, and was previously a Data Scientist at McKinsey & Company. I care about turning data engineering, analytics and AI/ML into governance that reaches citizens — and I still ship code.",
   },
 
   contact: {
@@ -29,12 +35,30 @@ window.SITE = {
   },
 
   nav: [
+    { id: "building", label: "Now" },
     { id: "about", label: "About" },
     { id: "work", label: "Work" },
     { id: "experience", label: "Experience" },
-    { id: "skills", label: "Skills" },
     { id: "contact", label: "Contact" },
   ],
+
+  // "Building now" — the in-progress flagship, featured boldly near the top.
+  building: {
+    badge: "In progress",
+    kicker: "Currently building",
+    name: "A RAG chatbot for data.gov.in",
+    blurb:
+      "A fully offline, retrieval-augmented chatbot for data.gov.in — India’s Open Government Data platform. Every part runs locally: LLM inference via Ollama, embeddings via sentence-transformers, and a persisted ChromaDB vector store — no external API calls at runtime. It answers strictly from official data.gov.in policy documents and auto-adapts to its host, from a laptop to a 32-core workstation to a GPU cloud VM.",
+    highlights: [
+      "100% offline / air-gapped",
+      "Local LLM via Ollama",
+      "RAG over official OGD policy docs",
+      "REST API + SSE streaming + Docker",
+      "Hardware-adaptive runtime",
+    ],
+    tech: ["Python", "Ollama", "ChromaDB", "sentence-transformers", "REST / SSE"],
+    code: "https://github.com/sudo-karan/rag_chatbot",
+  },
 
   stats: [
     { value: "4+", label: "Years at NIC, Govt. of India" },
@@ -47,8 +71,8 @@ window.SITE = {
   pillars: [
     "Open Government Data — data.gov.in",
     "AI / ML & Data Engineering",
+    "PhD candidate · IIT Delhi",
     "ex-McKinsey Data Scientist",
-    "Full-stack engineer & researcher",
   ],
 
   experience: [
@@ -183,6 +207,7 @@ window.SITE = {
   ],
 
   education: [
+    { degree: "Doctoral Research (PhD), Computer Science", school: "Indian Institute of Technology (IIT) Delhi", period: "2025 — Present", note: "Ongoing" },
     { degree: "M.Tech, Computer Science & Engineering", school: "Punjab Engineering College, Chandigarh", period: "2019 — 2021", note: "9.60 CGPA" },
     { degree: "B.Tech, Computer Science & Engineering", school: "Punjabi University, Patiala", period: "2015 — 2019", note: "8.21 CGPA" },
   ],

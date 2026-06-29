@@ -140,6 +140,44 @@ section { padding: clamp(3.8rem, 9vw, 7rem) 0; position: relative; }
 .portrait .tagchip .pin { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 0 rgba(34,197,94,.5); animation: ping 2.4s var(--ease) infinite; }
 @keyframes ping { 0%{box-shadow:0 0 0 0 rgba(34,197,94,.5);} 70%{box-shadow:0 0 0 8px transparent;} 100%{box-shadow:0 0 0 0 transparent;} }
 
+/* ---- hero credential badges -------------------------------------------- */
+.creds { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 1.4rem; }
+.cred {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  font-size: 0.88rem; font-weight: 600; color: var(--violet-deep);
+  background: var(--violet-tint); border: 1px solid color-mix(in srgb, var(--violet) 28%, transparent);
+  border-radius: 999px; padding: 0.5rem 0.95rem;
+}
+.cred .cdot { width: 7px; height: 7px; border-radius: 50%; background: var(--violet); flex: none; }
+
+/* ---- building now ------------------------------------------------------- */
+#building { padding-top: clamp(2.5rem, 6vw, 4.5rem); padding-bottom: clamp(2.5rem, 6vw, 4.5rem); }
+.build-card {
+  display: grid; grid-template-columns: 1.15fr 0.85fr; gap: clamp(1.6rem, 4vw, 3rem);
+  background: var(--card); border: 1px solid var(--line); border-radius: 26px;
+  padding: clamp(1.8rem, 4vw, 3rem); box-shadow: var(--shadow); position: relative; overflow: hidden;
+}
+.build-card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: linear-gradient(var(--violet), var(--violet-deep)); }
+.build-kicker { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: var(--violet); }
+.build-card h2 { font-family: var(--serif); font-weight: 600; font-size: clamp(1.7rem, 3.8vw, 2.7rem); line-height: 1.12; margin-top: 0.7rem; }
+.build-blurb { color: var(--ink-2); margin-top: 1rem; max-width: 54ch; }
+.build-highlights { display: flex; flex-wrap: wrap; gap: 0.5rem 1.1rem; margin-top: 1.3rem; }
+.build-highlights li { font-size: 0.88rem; color: var(--ink); display: flex; align-items: center; gap: 0.5rem; }
+.build-highlights li::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--violet); }
+.build-tech { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 1.3rem; }
+.build-tech .t { font-size: 0.74rem; color: var(--ink-2); background: var(--paper-2); border: 1px solid var(--line); border-radius: 7px; padding: 0.24rem 0.55rem; }
+.build-actions { margin-top: 1.6rem; }
+
+.build-aside { display: flex; flex-direction: column; gap: 1rem; align-items: flex-start; }
+.build-status { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.78rem; font-weight: 600; color: var(--violet-deep); background: var(--violet-tint); border: 1px solid color-mix(in srgb, var(--violet) 28%, transparent); border-radius: 999px; padding: 0.42rem 0.85rem; }
+.build-status .blip { width: 8px; height: 8px; border-radius: 50%; background: var(--violet); box-shadow: 0 0 0 0 color-mix(in srgb, var(--violet) 55%, transparent); animation: blip 1.9s var(--ease) infinite; }
+@keyframes blip { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--violet) 55%, transparent); } 70% { box-shadow: 0 0 0 9px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+.build-term { width: 100%; background: var(--paper); border: 1px solid var(--line-2); border-radius: 16px; padding: 0.9rem 1rem 1rem; box-shadow: var(--shadow-sm); }
+.build-term .dots { display: flex; gap: 0.4rem; margin-bottom: 0.7rem; }
+.build-term .dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--line-2); }
+.build-term pre { margin: 0; white-space: pre-wrap; line-height: 1.55; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.76rem; color: var(--ink); }
+.build-term .c { color: var(--violet); } .build-term .g { color: #0d9488; } .build-term .o { color: #c2691f; }
+
 /* ---- pillars marquee ---------------------------------------------------- */
 .pillars { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 1.1rem 0; }
 .pillars .wrap { display: flex; flex-wrap: wrap; gap: 0.8rem 2.2rem; justify-content: space-between; align-items: center; }
@@ -264,6 +302,7 @@ footer .socials { display: flex; gap: 0.8rem; }
   .exp-item { grid-template-columns: 1fr; gap: 0.9rem; }
   .card.feat { grid-column: span 1; }
   .cred-grid { grid-template-columns: 1fr; }
+  .build-card { grid-template-columns: 1fr; }
 }
 @media (max-width: 560px) {
   body { font-size: 16px; }

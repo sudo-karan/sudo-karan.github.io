@@ -42,12 +42,25 @@
     cta.appendChild(a(S.contact.resume, "btn", ICON.dl + " Résumé", true));
     cta.appendChild(a(S.contact.linkedin, "btn", ICON.li + " LinkedIn", true));
     cta.appendChild(a(S.contact.github, "btn", ICON.gh + " GitHub", true));
+    var creds = $("#heroCreds");
+    (p.creds || []).forEach(function (c) { creds.appendChild(el("span", "cred", '<span class="cdot"></span>' + esc(c))); });
     var meta = $("#heroMeta");
     [p.role, "NIC · MeitY", p.location].forEach(function (m) {
       meta.appendChild(el("span", "", '<span class="pin"></span>' + esc(m)));
     });
     var pil = $("#pillars");
     S.pillars.forEach(function (x) { pil.appendChild(el("span", "", esc(x))); });
+  }
+
+  function renderBuilding() {
+    var b = S.building; if (!b) return;
+    $("#buildKicker").textContent = b.kicker;
+    $("#buildName").textContent = b.name;
+    $("#buildBlurb").textContent = b.blurb;
+    $("#buildBadge").textContent = b.badge;
+    var hl = $("#buildHighlights"); b.highlights.forEach(function (h) { hl.appendChild(el("li", "", esc(h))); });
+    var tech = $("#buildTech"); b.tech.forEach(function (t) { tech.appendChild(el("span", "t", esc(t))); });
+    $("#buildActions").appendChild(a(b.code, "btn primary", ICON.gh + " View the code", true));
   }
 
   function renderAbout() {
@@ -164,7 +177,7 @@
 
   function boot() {
     if (!S) return;
-    renderNav(); renderHero(); renderAbout(); renderWork();
+    renderNav(); renderHero(); renderBuilding(); renderAbout(); renderWork();
     renderExperience(); renderSkills(); renderCredentials(); renderContact();
     wireNav(); wireReveal();
   }
