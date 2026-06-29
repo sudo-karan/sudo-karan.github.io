@@ -16,7 +16,8 @@
     li: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.45 20.45h-3.56v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.42v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28zM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13zM7.12 20.45H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0z"/></svg>',
     mail: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 6 10 7L22 6"/></svg>',
     dl: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>',
-    ext: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>'
+    ext: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>',
+    send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>'
   };
 
   function renderNav() {
@@ -157,6 +158,97 @@
     links.querySelectorAll("a").forEach(function (l) { l.addEventListener("click", function () { links.classList.remove("open"); }); });
   }
 
+  /* ---- contact form ---- */
+  var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  function wireContactForm() {
+    var form = $("#contactForm");
+    if (!form) return;
+    var statusEl = $("#formStatus");
+    var submitBtn = $("#cfSubmit");
+    submitBtn.innerHTML = ICON.send + " Send message";
+    var tEl = $("#cfTurnstile"), widgetId = null;
+
+    // Render the Turnstile widget once its script is ready (poll up to ~8s).
+    var key = (S.contact && S.contact.turnstileSiteKey) || "";
+    var tries = 0;
+    (function renderTurnstile() {
+      if (window.turnstile && tEl && widgetId == null && key) {
+        try { widgetId = window.turnstile.render(tEl, { sitekey: key, theme: "light" }); } catch (e) {}
+      }
+      if (widgetId == null && tries++ < 40) setTimeout(renderTurnstile, 200);
+    })();
+
+    function fieldOf(name) { return form.querySelector('[name="' + name + '"]'); }
+    function setErr(name, msg) {
+      var inp = fieldOf(name); if (!inp) return;
+      var wrap = inp.closest(".field"), err = form.querySelector('.err[data-for="' + name + '"]');
+      if (wrap) wrap.classList.toggle("invalid", !!msg);
+      if (err) err.textContent = msg || "";
+    }
+    function clearErrs() { ["name", "email", "subject", "message", "org"].forEach(function (n) { setErr(n, ""); }); }
+
+    function validate(v) {
+      clearErrs();
+      var first = null;
+      function bad(n, m) { setErr(n, m); if (!first) first = fieldOf(n); }
+      if (!v.name) bad("name", "Please enter your name.");
+      if (!v.email) bad("email", "Please enter your email.");
+      else if (!EMAIL_RE.test(v.email)) bad("email", "Please enter a valid email address.");
+      if (!v.subject) bad("subject", "Please add a subject.");
+      if (!v.message) bad("message", "Please write a message.");
+      else if (v.message.length < 10) bad("message", "A little more detail, please (10+ characters).");
+      if (first) first.focus();
+      return !first;
+    }
+
+    function setStatus(msg, kind) { statusEl.className = "form-status" + (kind ? " " + kind : ""); statusEl.innerHTML = msg || ""; }
+
+    function mailtoFallback(v) {
+      var body = "From: " + v.name + (v.org ? " (" + v.org + ")" : "") + "\nEmail: " + v.email + "\n\n" + v.message;
+      return "mailto:" + S.contact.email + "?subject=" + encodeURIComponent(v.subject || "Hello") + "&body=" + encodeURIComponent(body);
+    }
+
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var v = {
+        name: fieldOf("name").value.trim(),
+        email: fieldOf("email").value.trim(),
+        subject: fieldOf("subject").value.trim(),
+        org: fieldOf("org").value.trim(),
+        message: fieldOf("message").value.trim(),
+        website: fieldOf("website").value.trim() // honeypot
+      };
+      if (!validate(v)) { setStatus("", ""); return; }
+
+      var token = window.turnstile && widgetId != null ? window.turnstile.getResponse(widgetId) : "";
+      if (!token) { setStatus("Please complete the “I’m human” check.", "err"); return; }
+
+      submitBtn.disabled = true;
+      setStatus("Sending…", "");
+      v.token = token;
+
+      fetch(S.contact.formEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(v)
+      }).then(function (r) {
+        return r.json().catch(function () { return { ok: false, error: "bad-response" }; });
+      }).then(function (j) {
+        if (j && j.ok) {
+          form.innerHTML = '<div class="form-done"><div class="big">Message sent ✓</div><p>Thanks, ' +
+            esc(v.name.split(" ")[0] || "there") + " — I’ll get back to you at " + esc(v.email) + " soon.</p></div>";
+        } else {
+          submitBtn.disabled = false;
+          if (window.turnstile && widgetId != null) window.turnstile.reset(widgetId);
+          setStatus('Something went wrong. Please <a href="' + mailtoFallback(v) + '">email me directly</a>.', "err");
+        }
+      }).catch(function () {
+        submitBtn.disabled = false;
+        setStatus('Couldn’t reach the server. Please <a href="' + mailtoFallback(v) + '">email me directly</a>.', "err");
+      });
+    });
+  }
+
   function wireReveal() {
     if (reduce) return;
     var pending = [].slice.call(document.querySelectorAll(".reveal"));
@@ -179,7 +271,7 @@
     if (!S) return;
     renderNav(); renderHero(); renderBuilding(); renderAbout(); renderWork();
     renderExperience(); renderSkills(); renderCredentials(); renderContact();
-    wireNav(); wireReveal();
+    wireNav(); wireReveal(); wireContactForm();
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
   else boot();

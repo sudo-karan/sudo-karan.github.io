@@ -263,18 +263,46 @@ section { padding: clamp(3.8rem, 9vw, 7rem) 0; position: relative; }
 .langs { margin-top: 1.3rem; font-size: 0.85rem; color: var(--ink-3); display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; }
 
 /* ---- contact ------------------------------------------------------------ */
+.contact-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4rem; align-items: stretch; }
 .contact-card {
-  background: linear-gradient(135deg, var(--violet) 0%, var(--violet-deep) 100%);
-  color: #fff; border-radius: 28px; padding: clamp(2.4rem, 6vw, 4.5rem) clamp(1.5rem, 5vw, 4rem);
-  text-align: center; box-shadow: var(--shadow-lg);
+  background: linear-gradient(150deg, var(--violet) 0%, var(--violet-deep) 100%);
+  color: #fff; border-radius: 24px; padding: clamp(2rem, 4vw, 3.2rem);
+  box-shadow: var(--shadow-lg); display: flex; flex-direction: column; justify-content: center;
 }
-.contact-card h2 { font-family: var(--serif); font-weight: 600; font-size: clamp(2rem, 5vw, 3.4rem); line-height: 1.1; max-width: 20ch; margin: 0 auto 1rem; }
-.contact-card p { color: rgba(255,255,255,0.85); max-width: 48ch; margin: 0 auto 2rem; }
-.contact-actions { display: flex; flex-wrap: wrap; gap: 0.7rem; justify-content: center; }
+.contact-card h2 { font-family: var(--serif); font-weight: 600; font-size: clamp(1.9rem, 3.6vw, 2.8rem); line-height: 1.12; margin-bottom: 1rem; }
+.contact-card p { color: rgba(255,255,255,0.85); margin-bottom: 1.8rem; }
+.contact-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; }
 .contact-card .btn { background: rgba(255,255,255,0.12); color: #fff; border-color: rgba(255,255,255,0.3); }
 .contact-card .btn:hover { background: #fff; color: var(--violet-deep); border-color: #fff; }
 .contact-card .btn.primary { background: #fff; color: var(--violet-deep); }
 .contact-card .btn.primary:hover { background: var(--paper); }
+
+/* form card */
+.form-card { background: var(--card); border: 1px solid var(--line); border-radius: 24px; padding: clamp(1.6rem, 3.5vw, 2.4rem); box-shadow: var(--shadow); }
+.form-card h3 { font-family: var(--serif); font-weight: 600; font-size: 1.5rem; margin-bottom: 1.3rem; }
+.field { margin-bottom: 1rem; }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.field label { display: block; font-size: 0.82rem; font-weight: 600; color: var(--ink-2); margin-bottom: 0.4rem; }
+.field .req { color: var(--violet); }
+.field input, .field textarea {
+  width: 100%; font-family: var(--sans); font-size: 0.95rem; color: var(--ink);
+  background: var(--paper); border: 1px solid var(--line-2); border-radius: 12px;
+  padding: 0.7rem 0.85rem; transition: border-color .2s var(--ease), box-shadow .2s var(--ease), background .2s;
+}
+.field textarea { resize: vertical; min-height: 110px; }
+.field input:focus, .field textarea:focus { outline: none; border-color: var(--violet); background: var(--card); box-shadow: 0 0 0 3px var(--violet-tint); }
+.field.invalid input, .field.invalid textarea { border-color: #d4453b; box-shadow: 0 0 0 3px rgba(212,69,59,0.12); }
+.field .err { display: block; color: #c0392b; font-size: 0.78rem; margin-top: 0.35rem; }
+.hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+.cf-turnstile { margin: 0.4rem 0 1rem; }
+#cfSubmit { width: 100%; justify-content: center; }
+#cfSubmit[disabled] { opacity: 0.6; cursor: not-allowed; }
+.form-status { margin-top: 0.9rem; font-size: 0.9rem; min-height: 1.2em; }
+.form-status.ok { color: var(--violet-deep); font-weight: 600; }
+.form-status.err { color: #c0392b; }
+.form-done { text-align: center; padding: 1.6rem 0; }
+.form-done .big { font-family: var(--serif); font-size: 1.7rem; font-weight: 600; margin-bottom: 0.5rem; }
+.form-done p { color: var(--ink-2); }
 
 /* ---- footer ------------------------------------------------------------- */
 footer { border-top: 1px solid var(--line); padding: 2.5rem 0 3rem; }
@@ -308,11 +336,13 @@ footer .socials { display: flex; gap: 0.8rem; }
   .cred-grid { grid-template-columns: 1fr; }
   .build-card { grid-template-columns: 1fr; }
   .skills-grid { column-count: 2; }
+  .contact-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 560px) {
   body { font-size: 16px; }
   .work-grid { grid-template-columns: 1fr; }
   .skills-grid { column-count: 1; }
+  .field-row { grid-template-columns: 1fr; }
   .about-stats { grid-template-columns: 1fr; }
   .hero-cta .btn, .contact-actions .btn { flex: 1 1 auto; justify-content: center; }
   .pillars .wrap { gap: 0.5rem 1.4rem; }
