@@ -142,17 +142,23 @@ export async function onRequestPost(context) {
     // Not configured yet (e.g. before setup). Don't 500 — let the client know.
     return json({ ok: false, error: "not-configured" }, 503);
   }
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 15000);
   try {
     const r = await fetch(env.APPS_SCRIPT_URL, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ secret: env.SHARED_SECRET || "", fields, meta }),
+      signal: ac.signal,
+      redirect: "follow",
     });
-    if (!r.ok) return json({ ok: false, error: "delivery-failed" }, 502);
+    if (!r.ok) return json({ ok: false, error: "delivery-failed", status: r.status }, 502);
     const out = await r.json().catch(() => ({}));
     if (out && out.ok === false) return json({ ok: false, error: out.error || "delivery-rejected" }, 502);
   } catch (e) {
-    return json({ ok: false, error: "delivery-error" }, 502);
+    return json({ ok: false, error: "delivery-error", detail: String((e && e.message) || e) }, 502);
+  } finally {
+    clearTimeout(timer);
   }
 
   return json({ ok: true });
