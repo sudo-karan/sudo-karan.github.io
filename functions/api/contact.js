@@ -94,12 +94,18 @@ export async function onRequestPost(context) {
   form.append("secret", secret);
   form.append("response", token);
   if (ip) form.append("remoteip", ip);
-  let tsOk = false;
+  let ts;
   try {
     const r = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", { method: "POST", body: form });
-    tsOk = !!(await r.json()).success;
+    ts = await r.json();
   } catch (e) { return json({ ok: false, error: "captcha-error" }, 502); }
-  if (!tsOk) return json({ ok: false, error: "failed-captcha" }, 400);
+  if (!ts || !ts.success) {
+    // Surface Turnstile's error-codes so the cause is unambiguous, e.g.
+    // invalid-input-secret (wrong/missing secret), invalid-input-response
+    // (token doesn't match this secret = key-pair mismatch / expired),
+    // timeout-or-duplicate (token reused).
+    return json({ ok: false, error: "failed-captcha", codes: (ts && ts["error-codes"]) || [], hostname: (ts && ts.hostname) || "" }, 400);
+  }
 
   // Enrich with request metadata (Cloudflare provides geo/IP/ISP server-side, no
   // browser geolocation prompt — collected silently per the owner's request).
