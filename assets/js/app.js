@@ -17,7 +17,8 @@
     mail: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 6 10 7L22 6"/></svg>',
     dl: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>',
     ext: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>',
-    send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>'
+    send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>',
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>'
   };
 
   function renderNav() {
@@ -208,6 +209,38 @@
       return "mailto:" + S.contact.email + "?subject=" + encodeURIComponent(v.subject || "Hello") + "&body=" + encodeURIComponent(body);
     }
 
+    // Success view that doesn't jump the layout: freeze the card at its current
+    // height, swap the form for a centred confirmation, and offer a reset.
+    var card = form.closest(".form-card") || form.parentNode;
+    var heading = card.querySelector("h3");
+    function showSent(v) {
+      card.style.minHeight = card.getBoundingClientRect().height + "px";
+      card.classList.add("sent");
+      if (heading) heading.hidden = true;
+      form.hidden = true;
+      var done = el("div", "form-done");
+      done.innerHTML =
+        '<div class="done-badge">' + ICON.check + "</div>" +
+        '<div class="big">Message sent</div>' +
+        "<p>Thanks, " + esc(v.name.split(" ")[0] || "there") +
+        " — I’ll get back to you at <strong>" + esc(v.email) + "</strong> soon.</p>" +
+        '<button type="button" class="btn again">Send another message</button>';
+      card.appendChild(done);
+      done.querySelector(".again").addEventListener("click", function () {
+        card.removeChild(done);
+        card.classList.remove("sent");
+        card.style.minHeight = "";
+        if (heading) heading.hidden = false;
+        form.reset();
+        clearErrs();
+        setStatus("", "");
+        submitBtn.disabled = false;
+        if (window.turnstile && widgetId != null) { try { window.turnstile.reset(widgetId); } catch (e) {} }
+        form.hidden = false;
+        fieldOf("name").focus();
+      });
+    }
+
     form.addEventListener("submit", function (e) {
       e.preventDefault();
       var v = {
@@ -243,8 +276,7 @@
           body: JSON.stringify(payload)
         });
       }).then(function () {
-        form.innerHTML = '<div class="form-done"><div class="big">Message sent ✓</div><p>Thanks, ' +
-          esc(v.name.split(" ")[0] || "there") + " — I’ll get back to you at " + esc(v.email) + " soon.</p></div>";
+        showSent(v);
       }).catch(function () {
         submitBtn.disabled = false;
         if (window.turnstile && widgetId != null) window.turnstile.reset(widgetId);
@@ -273,31 +305,149 @@
     return { browser: br, platform: os };
   }
   function gatherMeta() {
-    var d = uaParse(navigator.userAgent);
+    var nav = navigator, scr = window.screen || {}, d = uaParse(nav.userAgent);
+    function yn(b) { return b ? "Yes" : "No"; }
+    function tz() { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { return ""; } }
+    function tzOffset() {
+      try {
+        var o = -new Date().getTimezoneOffset(), s = o < 0 ? "-" : "+"; o = Math.abs(o);
+        return "UTC" + s + Math.floor(o / 60) + ":" + ("0" + (o % 60)).slice(-2);
+      } catch (e) { return ""; }
+    }
+    function gpu() {
+      try {
+        var gl = document.createElement("canvas").getContext("webgl") || document.createElement("canvas").getContext("experimental-webgl");
+        if (!gl) return "";
+        var dbg = gl.getExtension("WEBGL_debug_renderer_info");
+        return (dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)) || "";
+      } catch (e) { return ""; }
+    }
+    var conn = nav.connection || nav.mozConnection || nav.webkitConnection || {};
     var meta = {
       submittedAt: new Date().toISOString(),
-      userAgent: navigator.userAgent,
+      // browser / device — from the UA now, refined by Client Hints below where supported
       browser: d.browser,
+      browserVersion: "",
       platform: d.platform,
-      language: navigator.language || "",
+      osVersion: "",
+      deviceType: (nav.userAgentData ? (nav.userAgentData.mobile ? "Mobile" : "Desktop")
+        : (/Mobi|Android|iPhone|iPad|iPod/.test(nav.userAgent) ? "Mobile" : "Desktop")),
+      deviceModel: "",
+      architecture: "",
+      bitness: "",
+      deviceMemory: (nav.deviceMemory ? nav.deviceMemory + " GB" : ""),
+      cpuCores: (nav.hardwareConcurrency || ""),
+      touchPoints: (nav.maxTouchPoints != null ? nav.maxTouchPoints : ""),
+      gpu: gpu(),
+      network: (conn.effectiveType || ""),
+      // display
+      screen: (scr.width ? scr.width + "x" + scr.height : ""),
+      viewport: (window.innerWidth + "x" + window.innerHeight),
+      pixelRatio: (window.devicePixelRatio || ""),
+      colorDepth: (scr.colorDepth ? scr.colorDepth + "-bit" : ""),
+      orientation: (scr.orientation && scr.orientation.type) || "",
+      colorScheme: (window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "Dark" : "Light"),
+      reducedMotion: yn(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches),
+      // locale / misc
+      language: nav.language || "",
+      languages: (nav.languages && nav.languages.join(", ")) || "",
+      timezone: tz(),
+      timezoneOffset: tzOffset(),
+      cookiesEnabled: yn(nav.cookieEnabled),
+      doNotTrack: (nav.doNotTrack === "1" || window.doNotTrack === "1" ? "Yes" : (nav.doNotTrack === "0" ? "No" : "Unset")),
       referer: document.referrer || "",
-      screen: (window.screen ? window.screen.width + "x" + window.screen.height : ""),
-      timezone: (function () { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { return ""; } })(),
+      pageUrl: location.href,
+      userAgent: nav.userAgent,
       accuracy: "ip"
     };
-    return fetch("https://ipwho.is/", { cache: "no-store" })
-      .then(function (r) { return r.json(); })
-      .then(function (g) {
-        if (g && g.success !== false) {
-          meta.ip = g.ip || ""; meta.city = g.city || ""; meta.state = g.region || "";
-          meta.country = g.country || ""; meta.postal = g.postal || "";
-          meta.latitude = g.latitude || ""; meta.longitude = g.longitude || "";
-          if (g.connection) { meta.isp = g.connection.isp || g.connection.org || ""; meta.asn = g.connection.asn || ""; }
-          if (g.timezone && g.timezone.id) meta.timezone = g.timezone.id;
-        }
-        return meta;
-      })
-      .catch(function () { return meta; }); // geo is best-effort; never block submit
+    // Fill only the fields we don't already have (first source to answer wins).
+    function fill(o) {
+      if (!o) return;
+      for (var k in o) { if (o[k] != null && o[k] !== "" && (meta[k] == null || meta[k] === "")) meta[k] = o[k]; }
+    }
+
+    // Rich IP → geo/ISP lookups. Any one can be down, rate-limited, or blocked by
+    // an adblocker/network filter, so we try several and stop at the first that
+    // returns real data. Each maps its own JSON shape onto our columns.
+    var providers = [
+      ["https://ipwho.is/", function (g) {
+        return (g && g.success !== false) ? {
+          ip: g.ip, city: g.city, state: g.region, country: g.country, postal: g.postal,
+          latitude: g.latitude, longitude: g.longitude,
+          isp: g.connection && (g.connection.isp || g.connection.org),
+          asn: g.connection && g.connection.asn,
+          timezone: g.timezone && g.timezone.id
+        } : null;
+      }],
+      ["https://get.geojs.io/v1/ip/geo.json", function (g) {
+        return (g && g.ip) ? {
+          ip: g.ip, city: g.city, state: g.region, country: g.country,
+          latitude: g.latitude, longitude: g.longitude,
+          isp: g.organization_name || g.organization, asn: g.asn, timezone: g.timezone
+        } : null;
+      }],
+      ["https://ipapi.co/json/", function (g) {
+        return (g && g.ip && !g.error) ? {
+          ip: g.ip, city: g.city, state: g.region, country: g.country_name, postal: g.postal,
+          latitude: g.latitude, longitude: g.longitude, isp: g.org, asn: g.asn, timezone: g.timezone
+        } : null;
+      }]
+    ];
+    function tryProviders(i) {
+      if (i >= providers.length) return Promise.resolve();
+      return fetch(providers[i][0], { cache: "no-store" })
+        .then(function (r) { return r.json(); })
+        .then(function (g) {
+          var o = providers[i][1](g);
+          if (o && (o.city || o.isp || o.latitude != null)) { fill(o); return; }
+          return tryProviders(i + 1);
+        })
+        .catch(function () { return tryProviders(i + 1); });
+    }
+
+    // First-party Cloudflare edge trace: same-origin on karan98.in, so it survives
+    // adblockers and locked-down networks that kill the third-party lookups above.
+    // Guarantees IP + country (code) even when every geo provider is blocked.
+    function fromTrace() {
+      return fetch("/cdn-cgi/trace", { cache: "no-store" })
+        .then(function (r) { return r.ok ? r.text() : ""; })
+        .then(function (t) {
+          var o = {};
+          String(t).split("\n").forEach(function (ln) { var i = ln.indexOf("="); if (i > 0) o[ln.slice(0, i)] = ln.slice(i + 1); });
+          fill({ ip: o.ip, country: o.loc });
+        })
+        .catch(function () { });
+    }
+
+    // User-Agent Client Hints (Chromium only): exact OS version, device model
+    // (Android exposes e.g. "Pixel 8"; Apple deliberately hides the iPhone model),
+    // CPU architecture/bitness, and the full browser version.
+    function fromClientHints() {
+      var uad = nav.userAgentData;
+      if (!uad || !uad.getHighEntropyValues) return Promise.resolve();
+      return uad.getHighEntropyValues(["platformVersion", "model", "architecture", "bitness", "uaFullVersion", "fullVersionList"])
+        .then(function (h) {
+          var ov = h.platformVersion || "";
+          if (/Windows/i.test(meta.platform) && ov) {
+            var major = parseInt(ov.split(".")[0], 10);
+            meta.osVersion = major >= 13 ? "11" : (major >= 1 ? "10" : ov);
+            meta.platform = "Windows " + meta.osVersion;
+          } else if (ov) { meta.osVersion = ov; }
+          if (h.model) meta.deviceModel = h.model;
+          if (h.architecture) meta.architecture = h.architecture;
+          if (h.bitness) meta.bitness = h.bitness;
+          var brand = (h.fullVersionList || []).filter(function (b) { return !/Not.?A.?Brand/i.test(b.brand); }).pop();
+          if (brand) { meta.browser = brand.brand + " " + brand.version.split(".").slice(0, 2).join("."); meta.browserVersion = brand.version; }
+          else if (h.uaFullVersion) { meta.browserVersion = h.uaFullVersion; }
+        })
+        .catch(function () { });
+    }
+
+    // Never let metadata gathering hold the send hostage — cap the whole thing.
+    var work = Promise.all([fromClientHints(), tryProviders(0).then(fromTrace)])
+      .then(function () { return meta; }).catch(function () { return meta; });
+    var cap = new Promise(function (res) { setTimeout(function () { res(meta); }, 4500); });
+    return Promise.race([work, cap]);
   }
 
   function wireReveal() {

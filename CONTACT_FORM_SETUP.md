@@ -38,6 +38,13 @@ browser via a free IP lookup and sent along.
 
 > Editing `Code.gs` later? Re-deploy: **Manage deployments → ✏️ edit → Version:
 > New version → Deploy** (the `/exec` URL stays the same).
+>
+> **After widening the columns** (this version captures ~45 fields — device model,
+> OS version, CPU/GPU, screen, viewport, network, timezone offset, languages,
+> Do-Not-Track, page URL, …): if the Sheet already holds an older, shorter header
+> row, **clear the Sheet once** (select all → delete) so the new header is written
+> fresh and the columns line up. The Sheet **and** the email now show the exact
+> same field set (a single `FIELDS` list in `Code.gs` drives both).
 
 That's it — **no Cloudflare env vars or Functions** are involved.
 
@@ -45,11 +52,19 @@ That's it — **no Cloudflare env vars or Functions** are involved.
 
 ## Verify
 - Open the site, fill the form, complete the Turnstile check, **Send** → you see
-  "Message sent ✓".
-- A new row appears in the Google Sheet (name/email/subject/org/message + IP,
-  ISP, city/state/country, lat-long, browser, OS, timezone, …).
-- An email arrives at `RECIPIENT`; replying goes to the sender.
+  the "Message sent" panel (with a **Send another message** button, no page reload).
+- A new row appears in the Google Sheet with the full field set (name/email/subject/
+  org/message + IP, ISP, ASN, city/state/country/postal, lat-long, browser +
+  version, OS + version, device type/model, CPU arch/cores, GPU, memory, network,
+  screen/viewport/pixel-ratio, colour scheme, timezone + offset, languages, …).
+- An **email** arrives at `RECIPIENT` showing the **same** fields (empty ones are
+  omitted); replying goes to the sender.
 - A bot that can't solve Turnstile is rejected server-side (no row, no email).
+
+> **What can't be captured:** Apple hides the exact iPhone/iPad model and iOS
+> Safari/Firefox don't expose User-Agent Client Hints, so on those browsers
+> device-model / OS-version / CPU-arch come through blank — everything else still
+> lands. Chromium browsers (Chrome/Edge/Android) fill the most.
 
 ## Notes
 - The browser posts in `no-cors` mode (Apps Script can't send CORS headers), so
