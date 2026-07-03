@@ -161,6 +161,48 @@
 
   /* ---- contact form ---- */
   var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  // Shared secret for the GitHub-Pages fallback obfuscation. This is only
+  // obscurity (it ships in public JS), enough to keep the payload unreadable to a
+  // casual snooper in the Network tab. Apps Script's OBFUSCATION_KEY must match.
+  var OBF_KEY = "7Qp2xL9vRt4Ke1Zc8Nb3Ym6Wd5Hs0Ja";
+
+  function b64ToBytes(b64) {
+    var bin = atob(b64), arr = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return arr;
+  }
+  function bytesToB64(buf) {
+    var arr = new Uint8Array(buf), bin = "";
+    for (var i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
+    return btoa(bin);
+  }
+  // Hybrid encryption: a random AES-GCM key encrypts the JSON, RSA-OAEP wraps that
+  // key with the public key. Only the holder of the private key (the Cloudflare
+  // Function) can unwrap it. Returns { k, iv, ct } (base64).
+  function hybridEncrypt(plaintext, spkiB64) {
+    var subtle = window.crypto.subtle, aesKey;
+    var data = new TextEncoder().encode(plaintext);
+    var iv = window.crypto.getRandomValues(new Uint8Array(12));
+    return subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt"])
+      .then(function (k) { aesKey = k; return subtle.encrypt({ name: "AES-GCM", iv: iv }, k, data); })
+      .then(function (ct) {
+        return subtle.exportKey("raw", aesKey).then(function (rawKey) {
+          return subtle.importKey("spki", b64ToBytes(spkiB64), { name: "RSA-OAEP", hash: "SHA-256" }, false, ["encrypt"])
+            .then(function (pub) { return subtle.encrypt({ name: "RSA-OAEP" }, pub, rawKey); })
+            .then(function (wrapped) { return { k: bytesToB64(wrapped), iv: bytesToB64(iv.buffer), ct: bytesToB64(ct) }; });
+        });
+      });
+  }
+  // Reversible XOR-then-base64 obfuscation (mirrored in Apps Script). Obscurity
+  // only — hides the payload from a casual Network-tab reader, not a code-reader.
+  function obfuscate(str, key) {
+    var bytes = new TextEncoder().encode(str), out = new Uint8Array(bytes.length), bin = "";
+    for (var i = 0; i < bytes.length; i++) out[i] = bytes[i] ^ (key.charCodeAt(i % key.length) & 0xff);
+    for (var j = 0; j < out.length; j++) bin += String.fromCharCode(out[j]);
+    return btoa(bin);
+  }
+
   function wireContactForm() {
     var form = $("#contactForm");
     if (!form) return;
@@ -265,28 +307,56 @@
       submitBtn.disabled = true;
       setStatus("Sending…", "");
 
-      gatherMeta().then(function (meta) {
-        var payload = {
-          token: token,
-          fields: { name: v.name, email: v.email, subject: v.subject, org: v.org, message: v.message },
-          meta: meta
-        };
-        // Apps Script can't return CORS headers, so we POST as a "simple request"
-        // (text/plain → no preflight) in no-cors mode: the request reaches the
-        // script (which records + emails); the response is opaque to us, so we
-        // confirm optimistically once it's sent.
-        return fetch(S.contact.formEndpoint, {
-          method: "POST",
-          mode: "no-cors",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify(payload)
-        });
-      }).then(function () {
-        showSent(v);
-      }).catch(function () {
+      var fields = { name: v.name, email: v.email, subject: v.subject, org: v.org, message: v.message };
+      var onGithub = /(^|\.)github\.io$/i.test(location.hostname);
+
+      // Preferred path (Cloudflare): hybrid-encrypt {token,fields,meta} and POST it
+      // to the same-origin Function, which derives IP/geo server-side. The browser
+      // sends no readable data and makes no third-party geo calls. Resolves on a
+      // real {ok:true}; rejects {fallback:true} when there's no Function here or the
+      // error is retryable (Turnstile token not yet spent), else {fallback:false}.
+      function cloudflarePath() {
+        if (onGithub || !window.crypto || !window.crypto.subtle) return Promise.reject({ fallback: true });
+        return gatherMeta({ withGeo: false })
+          .then(function (meta) { return hybridEncrypt(JSON.stringify({ token: token, fields: fields, meta: meta }), S.contact.publicKey); })
+          .then(function (enc) {
+            return fetch(S.contact.apiEndpoint, {
+              method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enc: enc })
+            });
+          })
+          .then(function (r) {
+            if (r.status === 404 || r.status === 405) return Promise.reject({ fallback: true }); // no Function on this host
+            return r.json().catch(function () { return {}; }).then(function (j) {
+              if (j && j.ok) return true;
+              // Function answered: only retryable failures (before the captcha was spent) may fall back.
+              return Promise.reject({ fallback: !!(j && j.retryable), error: (j && j.error) || "send-failed" });
+            });
+          }, function () { return Promise.reject({ fallback: true }); }); // network error → token not spent
+      }
+
+      // Fallback (GitHub Pages, or Function unreachable): gather geo client-side,
+      // OBFUSCATE the whole {token,fields,meta}, and post it straight to Apps Script.
+      // no-cors → opaque response, so success is optimistic once it's sent.
+      function fallbackPath() {
+        return gatherMeta({ withGeo: true }).then(function (meta) {
+          var blob = obfuscate(JSON.stringify({ token: token, fields: fields, meta: meta }), OBF_KEY);
+          return fetch(S.contact.fallbackEndpoint, {
+            method: "POST", mode: "no-cors",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({ obf: blob })
+          });
+        }).then(function () { return true; });
+      }
+
+      function onError() {
         submitBtn.disabled = false;
         if (window.turnstile && widgetId != null) window.turnstile.reset(widgetId);
         setStatus('Couldn’t send right now. Please <a href="' + mailtoFallback(v) + '">email me directly</a>.', "err");
+      }
+
+      cloudflarePath().then(function () { showSent(v); }, function (reason) {
+        if (reason && reason.fallback === false) { onError(); return; } // token already spent — don't retry
+        fallbackPath().then(function () { showSent(v); }, onError);
       });
     });
   }
@@ -310,7 +380,8 @@
     else if (/Safari/.test(ua) && (m = ua.match(/Version\/(\d+(\.\d+)?)/))) br = "Safari " + m[1];
     return { browser: br, platform: os };
   }
-  function gatherMeta() {
+  function gatherMeta(opts) {
+    var withGeo = !opts || opts.withGeo !== false; // Cloudflare path passes withGeo:false — geo comes from the server
     var nav = navigator, scr = window.screen || {}, d = uaParse(nav.userAgent);
     function yn(b) { return b ? "Yes" : "No"; }
     function tz() { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { return ""; } }
@@ -451,8 +522,11 @@
     }
 
     // Never let metadata gathering hold the send hostage — cap the whole thing.
-    var work = Promise.all([fromClientHints(), tryProviders(0).then(fromTrace)])
-      .then(function () { return meta; }).catch(function () { return meta; });
+    // On the Cloudflare path (withGeo:false) we skip the IP/geo lookups entirely —
+    // the Function derives those server-side, so no third-party request is made.
+    var jobs = [fromClientHints()];
+    if (withGeo) jobs.push(tryProviders(0).then(fromTrace));
+    var work = Promise.all(jobs).then(function () { return meta; }).catch(function () { return meta; });
     var cap = new Promise(function (res) { setTimeout(function () { res(meta); }, 4500); });
     return Promise.race([work, cap]);
   }

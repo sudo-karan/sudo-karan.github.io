@@ -32,11 +32,20 @@ window.SITE = {
     githubUser: "sudo-karan",
     linkedin: "https://www.linkedin.com/in/karan98",
     resume: "assets/Jaskaran_Singh_Resume.pdf",
-    // Contact form posts straight to a Google Apps Script web app (no Cloudflare
-    // Function needed — works from any host). Turnstile is verified inside the
-    // Apps Script; metadata (IP/geo/browser) is gathered client-side. See
-    // CONTACT_FORM_SETUP.md.
-    formEndpoint: "https://script.google.com/macros/s/AKfycbx-6-WldWnNAUi5_32S-lzvAVF2ndzKoatiOGCeaAVbYQLNilbpnyMo2dE46pn7hXAO/exec",
+    // Contact form. On Cloudflare (karan98.in) the browser hybrid-ENCRYPTS the
+    // payload and posts it to the same-origin Function at `apiEndpoint`, which
+    // derives IP/geo/ISP server-side and forwards to Apps Script — nothing
+    // sensitive is readable in the browser and there are no third-party geo calls.
+    // On the GitHub Pages mirror (no Functions) it falls back to posting an
+    // OBFUSCATED blob straight to `fallbackEndpoint` (Apps Script), gathering geo
+    // client-side. Either way the Network tab shows only an opaque blob.
+    // See CONTACT_FORM_SETUP.md.
+    apiEndpoint: "/api/contact",
+    fallbackEndpoint: "https://script.google.com/macros/s/AKfycbx-6-WldWnNAUi5_32S-lzvAVF2ndzKoatiOGCeaAVbYQLNilbpnyMo2dE46pn7hXAO/exec",
+    // RSA-OAEP public key (SPKI, base64). Public by design — the matching private
+    // key lives ONLY in the Cloudflare Function env (PRIVATE_KEY). Used to wrap the
+    // per-message AES key that encrypts the payload.
+    publicKey: "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1JMTLtINAoNvbqmYU1L+5x1rkx9hhvmhlsbWeTEmoZtaAZHKCSWih2fBnqY5ug/Z5DYIM2bb5/jJ7/cFp42fuAtgLDYZ/N8cNcRZJ61Lm22wciD3li9U1fpGfKGzoq2NrjvPTWnYDPVErfR65/ROIBBq2AQU60JRqLyed3qWabKW7MlXHJ5KD8ea1aobhWYB6qSe9ETCHcMVscQCR3glQUlvAhN5Y9YGQzfhJ4ndOnA3KSnuG+Otptx6p5FY+ebvVZkhOyTs9u5wDy1fwc30aDgK/XCCidI76enj9nm+rXx47RcPMCo2fnc3IhpcOIqzjMMs5Uc1gmoA8nmYhSKk5QIDAQAB",
     turnstileSiteKey: "0x4AAAAAADsvK3etT1iNEaDP",
   },
 

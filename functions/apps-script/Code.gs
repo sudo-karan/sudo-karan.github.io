@@ -1,16 +1,21 @@
 /* ============================================================================
    Google Apps Script — contact form handler for karan98.in.
-   Verifies the Cloudflare Turnstile token, appends a row to the bound Sheet,
-   and emails you. The website posts here directly (no Cloudflare Function).
 
-   A single FIELDS list below is the source of truth for BOTH the Sheet columns
-   and the email table, so the two can never drift out of sync — add a field
-   once and it shows up in the row and the email.
+   Accepts TWO request shapes so the form works on Cloudflare and GitHub Pages:
+     1. { secret, fields, meta }  — forwarded by the Cloudflare Function, which
+        already verified Turnstile and derived IP/geo server-side. We just check
+        the shared secret and record it.
+     2. { obf }  — the GitHub-Pages fallback: an obfuscated blob posted straight
+        from the browser. We de-obfuscate it, then verify Turnstile here.
+
+   A single FIELDS list is the source of truth for BOTH the Sheet columns and the
+   email table, so they can never drift out of sync.
 
    Script Properties (Project Settings → Script properties):
-     TURNSTILE_SECRET  - Cloudflare Turnstile *secret* key (same widget as the
-                         site key in the website's data.js)
+     TURNSTILE_SECRET  - Cloudflare Turnstile secret key (for the { obf } path)
      RECIPIENT         - where to email submissions
+     SHARED_SECRET     - must equal the Cloudflare Function's SHARED_SECRET env
+     OBFUSCATION_KEY   - must equal OBF_KEY in the website's app.js (defaults below)
      SHEET_ID          - (optional) spreadsheet id; otherwise the bound sheet
 
    Deploy: Web app · Execute as: Me · Who has access: Anyone.
@@ -19,6 +24,9 @@
    NOTE: if the Sheet already has an old (shorter) header row, clear the Sheet
    once (select all → delete) so the new, wider header is written fresh.
    ========================================================================== */
+
+// Must match OBF_KEY in assets/js/app.js (overridable via the OBFUSCATION_KEY property).
+var DEFAULT_OBF_KEY = '7Qp2xL9vRt4Ke1Zc8Nb3Ym6Wd5Hs0Ja';
 
 // [ Column label , key in the record built by doPost() ]  — order = sheet order.
 var FIELDS = [
@@ -29,7 +37,9 @@ var FIELDS = [
   ['Browser', 'browser'], ['Browser version', 'browserVersion'], ['OS', 'platform'], ['OS version', 'osVersion'],
   ['Device type', 'deviceType'], ['Device model', 'deviceModel'], ['CPU arch', 'architecture'], ['Bitness', 'bitness'],
   ['Device memory', 'deviceMemory'], ['CPU cores', 'cpuCores'], ['Touch points', 'touchPoints'], ['GPU', 'gpu'],
-  ['Network', 'network'], ['Screen', 'screen'], ['Viewport', 'viewport'], ['Pixel ratio', 'pixelRatio'],
+  ['Network', 'network'], ['Accept-Language', 'acceptLanguage'], ['CF colo', 'colo'],
+  ['HTTP protocol', 'httpProtocol'], ['TLS version', 'tlsVersion'],
+  ['Screen', 'screen'], ['Viewport', 'viewport'], ['Pixel ratio', 'pixelRatio'],
   ['Colour depth', 'colorDepth'], ['Orientation', 'orientation'], ['Colour scheme', 'colorScheme'],
   ['Reduced motion', 'reducedMotion'], ['Timezone', 'timezone'], ['UTC offset', 'timezoneOffset'],
   ['Language', 'language'], ['Languages', 'languages'], ['Cookies enabled', 'cookiesEnabled'],
@@ -40,23 +50,36 @@ var FIELDS = [
 function doPost(e) {
   try {
     var props = PropertiesService.getScriptProperties();
-    var secret = props.getProperty('TURNSTILE_SECRET') || '';
+    var turnstileSecret = props.getProperty('TURNSTILE_SECRET') || '';
+    var sharedSecret = props.getProperty('SHARED_SECRET') || '';
+    var obfKey = props.getProperty('OBFUSCATION_KEY') || DEFAULT_OBF_KEY;
     var recipient = props.getProperty('RECIPIENT') || Session.getEffectiveUser().getEmail();
     var sheetId = props.getProperty('SHEET_ID') || '';
 
-    var data = JSON.parse((e && e.postData && e.postData.contents) || '{}');
-    var f = data.fields || {}, m = data.meta || {};
+    var body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    var f, m;
 
-    // Verify Cloudflare Turnstile (bot check). Secret stays here, server-side.
-    if (secret) {
-      var resp = UrlFetchApp.fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-        method: 'post',
-        payload: { secret: secret, response: data.token || '', remoteip: m.ip || '' },
-        muteHttpExceptions: true
-      });
-      var vr = {};
-      try { vr = JSON.parse(resp.getContentText()); } catch (e2) {}
-      if (!vr.success) return out({ ok: false, error: 'failed-captcha', codes: vr['error-codes'] || [] });
+    if (body.secret != null) {
+      // Trusted path — the Cloudflare Function verified Turnstile + added geo.
+      // Require SHARED_SECRET to be configured AND match (never accept unauthenticated).
+      if (!sharedSecret || body.secret !== sharedSecret) return out({ ok: false, error: 'unauthorized' });
+      f = body.fields || {}; m = body.meta || {};
+    } else if (body.obf) {
+      // Direct (GitHub Pages) path — de-obfuscate, then verify Turnstile here.
+      var inner = JSON.parse(deob(body.obf, obfKey));
+      f = inner.fields || {}; m = inner.meta || {};
+      if (turnstileSecret) {
+        var resp = UrlFetchApp.fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+          method: 'post',
+          payload: { secret: turnstileSecret, response: inner.token || '', remoteip: m.ip || '' },
+          muteHttpExceptions: true
+        });
+        var vr = {};
+        try { vr = JSON.parse(resp.getContentText()); } catch (e2) {}
+        if (!vr.success) return out({ ok: false, error: 'failed-captcha', codes: vr['error-codes'] || [] });
+      }
+    } else {
+      return out({ ok: false, error: 'bad-request' });
     }
 
     // Validate required fields.
@@ -74,7 +97,8 @@ function doPost(e) {
       browser: m.browser, browserVersion: m.browserVersion, platform: m.platform, osVersion: m.osVersion,
       deviceType: m.deviceType, deviceModel: m.deviceModel, architecture: m.architecture, bitness: m.bitness,
       deviceMemory: m.deviceMemory, cpuCores: m.cpuCores, touchPoints: m.touchPoints, gpu: m.gpu,
-      network: m.network, screen: m.screen, viewport: m.viewport, pixelRatio: m.pixelRatio,
+      network: m.network, acceptLanguage: m.acceptLanguage, colo: m.colo, httpProtocol: m.httpProtocol,
+      tlsVersion: m.tlsVersion, screen: m.screen, viewport: m.viewport, pixelRatio: m.pixelRatio,
       colorDepth: m.colorDepth, orientation: m.orientation, colorScheme: m.colorScheme,
       reducedMotion: m.reducedMotion, timezone: m.timezone, timezoneOffset: m.timezoneOffset,
       language: m.language, languages: m.languages, cookiesEnabled: m.cookiesEnabled,
@@ -127,6 +151,17 @@ function doPost(e) {
 }
 
 function doGet() { return out({ ok: true, note: 'POST only' }); }
+
+// Reverse of app.js obfuscate(): base64-decode, XOR with the key, decode UTF-8.
+function deob(b64, key) {
+  var bytes = Utilities.base64Decode(b64);
+  var out = [];
+  for (var i = 0; i < bytes.length; i++) {
+    var x = (bytes[i] & 0xff) ^ (key.charCodeAt(i % key.length) & 0xff);
+    out.push(x > 127 ? x - 256 : x);
+  }
+  return Utilities.newBlob(out).getDataAsString('UTF-8');
+}
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
