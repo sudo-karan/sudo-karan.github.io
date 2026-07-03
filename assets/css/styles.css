@@ -112,7 +112,9 @@ section { padding: clamp(3.8rem, 9vw, 7rem) 0; position: relative; }
 
 /* ---- hero --------------------------------------------------------------- */
 .hero { padding-top: clamp(7rem, 14vh, 10rem); padding-bottom: clamp(3rem, 8vw, 6rem); }
-.hero-grid { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: clamp(2rem, 6vw, 5rem); align-items: center; }
+/* align-items:start pins the portrait to the top so it can't slide when the
+   web fonts swap in and reflow the text column (was causing 0.278 CLS). */
+.hero-grid { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: clamp(2rem, 6vw, 5rem); align-items: start; }
 .hero h1 { font-family: var(--serif); font-weight: 600; font-size: clamp(3rem, 7.5vw, 5.6rem); line-height: 1.02; letter-spacing: -0.02em; margin: 1.3rem 0 0; }
 .hero .role { font-family: var(--serif); font-style: italic; font-weight: 500; font-size: clamp(1.3rem, 3vw, 2rem); line-height: 1.25; color: var(--violet-deep); margin-top: 1rem; max-width: 18ch; }
 .hero .lede { color: var(--ink-2); font-size: 1.08rem; margin-top: 1.5rem; max-width: 48ch; }
@@ -300,9 +302,16 @@ section { padding: clamp(3.8rem, 9vw, 7rem) 0; position: relative; }
 .form-status { margin-top: 0.9rem; font-size: 0.9rem; min-height: 1.2em; }
 .form-status.ok { color: var(--violet-deep); font-weight: 600; }
 .form-status.err { color: #c0392b; }
-.form-done { text-align: center; padding: 1.6rem 0; }
-.form-done .big { font-family: var(--serif); font-size: 1.7rem; font-weight: 600; margin-bottom: 0.5rem; }
-.form-done p { color: var(--ink-2); }
+/* .sent freezes the card at its pre-submit height (set inline in JS) and centres
+   the confirmation, so swapping the form for the "sent" panel never shifts the page. */
+.form-card.sent { display: flex; align-items: center; justify-content: center; }
+.form-done { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 0.75rem; padding: 0.5rem 0; }
+.form-done .done-badge { width: 62px; height: 62px; border-radius: 50%; display: grid; place-items: center; background: var(--violet-tint); color: var(--violet-deep); }
+.form-done .done-badge svg { width: 30px; height: 30px; }
+.form-done .big { font-family: var(--serif); font-size: 1.7rem; font-weight: 600; }
+.form-done p { color: var(--ink-2); max-width: 36ch; }
+.form-done .again { margin-top: 0.5rem; border-color: var(--violet); color: var(--violet-deep); }
+.form-done .again:hover { background: var(--violet-tint); }
 
 /* ---- footer ------------------------------------------------------------- */
 footer { border-top: 1px solid var(--line); padding: 2.5rem 0 3rem; }
