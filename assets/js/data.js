@@ -36,7 +36,7 @@ window.SITE = {
     // Function needed — works from any host). Turnstile is verified inside the
     // Apps Script; metadata (IP/geo/browser) is gathered client-side. See
     // CONTACT_FORM_SETUP.md.
-    formEndpoint: "https://script.google.com/macros/s/AKfycbyMVM94kcfpOcLUoHHC3ZHUbPhd7VEC6bbK0806nR5JYRowqXsGEvYFPGYM7URbFOmx5w/exec",
+    formEndpoint: "https://script.google.com/macros/s/AKfycbx-6-WldWnNAUi5_32S-lzvAVF2ndzKoatiOGCeaAVbYQLNilbpnyMo2dE46pn7hXAO/exec",
     turnstileSiteKey: "0x4AAAAAADsvK3etT1iNEaDP",
   },
 
