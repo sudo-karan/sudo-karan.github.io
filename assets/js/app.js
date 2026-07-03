@@ -219,6 +219,11 @@
       if (heading) heading.hidden = true;
       form.hidden = true;
       var done = el("div", "form-done");
+      // role=status makes this a live region so screen readers announce the
+      // confirmation; tabindex + focus() moves keyboard focus here (the form that
+      // held focus is now hidden) so the "Send another" button is reachable.
+      done.setAttribute("role", "status");
+      done.setAttribute("tabindex", "-1");
       done.innerHTML =
         '<div class="done-badge">' + ICON.check + "</div>" +
         '<div class="big">Message sent</div>' +
@@ -226,6 +231,7 @@
         " — I’ll get back to you at <strong>" + esc(v.email) + "</strong> soon.</p>" +
         '<button type="button" class="btn again">Send another message</button>';
       card.appendChild(done);
+      done.focus();
       done.querySelector(".again").addEventListener("click", function () {
         card.removeChild(done);
         card.classList.remove("sent");
@@ -429,8 +435,9 @@
         .then(function (h) {
           var ov = h.platformVersion || "";
           if (/Windows/i.test(meta.platform) && ov) {
+            // UA-CH platformVersion major: 0 = Win 7/8/8.1, 1–10 = Win 10, 13+ = Win 11.
             var major = parseInt(ov.split(".")[0], 10);
-            meta.osVersion = major >= 13 ? "11" : (major >= 1 ? "10" : ov);
+            meta.osVersion = major >= 13 ? "11" : (major >= 1 ? "10" : "7/8/8.1");
             meta.platform = "Windows " + meta.osVersion;
           } else if (ov) { meta.osVersion = ov; }
           if (h.model) meta.deviceModel = h.model;

@@ -81,10 +81,24 @@ function doPost(e) {
       doNotTrack: m.doNotTrack, bot: 'No', referer: m.referer, pageUrl: m.pageUrl, userAgent: m.userAgent
     };
 
-    // --- Sheet: header (once) + one row, both from FIELDS ---
+    // --- Sheet: header (kept in sync with FIELDS) + one row ---
     var ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
     var sh = ss.getSheets()[0];
-    if (sh.getLastRow() === 0) sh.appendRow(FIELDS.map(function (fld) { return fld[0]; }));
+    var header = FIELDS.map(function (fld) { return fld[0]; });
+    var lastRow = sh.getLastRow();
+    if (lastRow === 0) {
+      sh.appendRow(header);
+    } else if (lastRow === 1) {
+      // Only a header exists (no data yet). If it's an older/narrower header from a
+      // previous version, realign it in place so new wide rows don't land mislabeled.
+      var have = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+      if (have.length !== header.length || have[0] !== header[0]) {
+        sh.getRange(1, 1, 1, have.length).clearContent();
+        sh.getRange(1, 1, 1, header.length).setValues([header]);
+      }
+    }
+    // If real data already sits under a stale header, we leave it alone (clearing the
+    // sheet once, per the setup doc, is the intended migration) and just append.
     sh.appendRow(FIELDS.map(function (fld) { var v = rec[fld[1]]; return v == null ? '' : v; }));
 
     // --- Email: same fields, skipping the ones we couldn't capture ---
