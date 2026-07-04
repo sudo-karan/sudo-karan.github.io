@@ -230,6 +230,21 @@
     }
     function clearErrs() { ["name", "email", "subject", "message", "org"].forEach(function (n) { setErr(n, ""); }); }
 
+    // Live character counter for the message: "N / 5000", nudging past the 10-char
+    // minimum and warning as it nears the cap.
+    function updateCount() {
+      var el = form.querySelector(".char-count"), msg = fieldOf("message");
+      if (!el || !msg) return;
+      var n = msg.value.length, max = parseInt(msg.getAttribute("maxlength"), 10) || 5000;
+      var t = n + " / " + max, warn = false;
+      if (n === 0) t += " · min 10";
+      else if (n < 10) { t += " · " + (10 - n) + " more"; warn = true; }
+      if (n >= max - 100) warn = true;
+      el.textContent = t;
+      el.classList.toggle("warn", warn);
+    }
+    (function () { var m = fieldOf("message"); if (m) m.addEventListener("input", updateCount); updateCount(); })();
+
     function validate(v) {
       clearErrs();
       var first = null;
@@ -281,6 +296,7 @@
         if (heading) heading.hidden = false;
         form.reset();
         clearErrs();
+        updateCount();
         setStatus("", "");
         submitBtn.disabled = false;
         if (window.turnstile && widgetId != null) { try { window.turnstile.reset(widgetId); } catch (e) {} }
