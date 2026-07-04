@@ -295,6 +295,11 @@ section { padding: clamp(3.8rem, 9vw, 7rem) 0; position: relative; }
 .field input:focus, .field textarea:focus { outline: none; border-color: var(--violet); background: var(--card); box-shadow: 0 0 0 3px var(--violet-tint); }
 .field.invalid input, .field.invalid textarea { border-color: #d4453b; box-shadow: 0 0 0 3px rgba(212,69,59,0.12); }
 .field .err { display: block; color: #c0392b; font-size: 0.78rem; margin-top: 0.35rem; }
+/* error (left) + live character counter (right) share a row under the textarea */
+.field-meta { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; }
+.field-meta .err { flex: 1; }
+.char-count { margin-top: 0.35rem; font-size: 0.74rem; color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.char-count.warn { color: #c0392b; }
 .hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
 .cf-turnstile { margin: 0.4rem 0 1rem; }
 #cfSubmit { width: 100%; justify-content: center; }
