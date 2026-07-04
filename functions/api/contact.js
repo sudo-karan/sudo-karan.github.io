@@ -119,13 +119,21 @@ export async function onRequestPost({ request, env }) {
   if (!meta.timezone) meta.timezone = cf.timezone || "";
 
   // Forward server→server to Apps Script (invisible to the browser).
+  // Apps Script answers a POST with a 302 to script.googleusercontent.com, which
+  // must be followed as a GET (what browsers/curl do). Cloudflare Workers'
+  // automatic redirect re-issues it as a POST, which Google rejects with 401 — so
+  // we follow the redirect manually: POST, read Location, then GET it.
   try {
-    const resp = await fetch(env.APPS_SCRIPT_URL, {
+    let resp = await fetch(env.APPS_SCRIPT_URL, {
       method: "POST",
-      redirect: "follow",
+      redirect: "manual",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({ secret: env.SHARED_SECRET, fields: fields, meta: meta })
     });
+    if (resp.status >= 300 && resp.status < 400) {
+      const loc = resp.headers.get("Location");
+      if (loc) resp = await fetch(loc); // GET the googleusercontent echo URL
+    }
     const txt = await resp.text();
     let parsed = {};
     try { parsed = JSON.parse(txt); } catch (e) {}
