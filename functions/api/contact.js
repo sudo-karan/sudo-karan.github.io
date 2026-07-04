@@ -122,15 +122,24 @@ export async function onRequestPost({ request, env }) {
   try {
     const resp = await fetch(env.APPS_SCRIPT_URL, {
       method: "POST",
+      redirect: "follow",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({ secret: env.SHARED_SECRET, fields: fields, meta: meta })
     });
+    const txt = await resp.text();
     let parsed = {};
-    try { parsed = JSON.parse(await resp.text()); } catch (e) {}
+    try { parsed = JSON.parse(txt); } catch (e) {}
     if (resp.ok && parsed.ok !== false) return json({ ok: true });
-    return json({ ok: false, error: (parsed && parsed.error) || "delivery-failed", retryable: false });
+    // Surface the underlying reason so failures are debuggable from the response.
+    return json({
+      ok: false,
+      error: (parsed && parsed.error) || "delivery-failed",
+      retryable: false,
+      status: resp.status,
+      detail: String(txt).replace(/\s+/g, " ").slice(0, 200)
+    });
   } catch (err) {
     // Captcha already spent — don't have the browser retry with the same token.
-    return json({ ok: false, error: "delivery-failed", retryable: false });
+    return json({ ok: false, error: "delivery-failed", retryable: false, detail: String((err && err.message) || err) });
   }
 }
