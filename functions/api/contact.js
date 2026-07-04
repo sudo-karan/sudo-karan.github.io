@@ -119,32 +119,51 @@ export async function onRequestPost({ request, env }) {
   if (!meta.timezone) meta.timezone = cf.timezone || "";
 
   // Forward server→server to Apps Script (invisible to the browser).
-  // Apps Script answers a POST with a 302 to script.googleusercontent.com, which
-  // must be followed as a GET (what browsers/curl do). Cloudflare Workers'
-  // automatic redirect re-issues it as a POST, which Google rejects with 401 — so
-  // we follow the redirect manually: POST, read Location, then GET it.
+  // Apps Script runs doPost on the POST (committing the Sheet row + email), then
+  // 302-redirects to a script.googleusercontent.com "echo" URL that renders the
+  // result. Cloudflare Workers' fetch sends NO User-Agent by default, which makes
+  // Google serve a 401 sign-in page instead of running the app — so we send a real
+  // browser User-Agent on BOTH hops (this is the actual fix). A 302 to the echo
+  // host means doPost already ran, so if that echo body is ever unreadable we still
+  // treat it as delivered.
+  const FWD_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/html;q=0.9,*/*;q=0.8"
+  };
   try {
-    let resp = await fetch(env.APPS_SCRIPT_URL, {
+    const resp = await fetch(env.APPS_SCRIPT_URL, {
       method: "POST",
-      redirect: "manual",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      redirect: "manual", // detect the 302 ourselves so we can use it as the success signal
+      headers: Object.assign({ "Content-Type": "text/plain;charset=utf-8" }, FWD_HEADERS),
       body: JSON.stringify({ secret: env.SHARED_SECRET, fields: fields, meta: meta })
     });
-    if (resp.status >= 300 && resp.status < 400) {
-      const loc = resp.headers.get("Location");
-      if (loc) resp = await fetch(loc); // GET the googleusercontent echo URL
-    }
-    const txt = await resp.text();
-    let parsed = {};
-    try { parsed = JSON.parse(txt); } catch (e) {}
-    if (resp.ok && parsed.ok !== false) return json({ ok: true });
-    // Surface the underlying reason so failures are debuggable from the response.
+
+    const isRedirect = resp.status >= 300 && resp.status < 400;
+    const loc = isRedirect ? resp.headers.get("Location") : null;
+    const ranDoPost = !!(loc && /script\.googleusercontent\.com/.test(loc));
+
+    // Read Apps Script's real answer from the echo (GET, same UA, no body).
+    let parsed = null, echoStatus = 0, echoText = "";
+    try {
+      const echo = loc ? await fetch(loc, { method: "GET", headers: FWD_HEADERS }) : resp;
+      echoStatus = echo.status;
+      echoText = await echo.text();
+      try { parsed = JSON.parse(echoText); } catch (_) { parsed = null; }
+    } catch (_) { parsed = null; }
+
+    if (parsed && parsed.ok === true) return json({ ok: true });
+    if (parsed && parsed.ok === false) return json({ ok: false, error: parsed.error || "delivery-failed", retryable: false });
+
+    // Couldn't read the body, but the POST 302'd to Google's echo host → doPost has
+    // already committed the row + email (its only rejectable condition, a bad shared
+    // secret, is impossible here since the Worker owns it). Treat as delivered.
+    if (ranDoPost) return json({ ok: true, note: "delivered-unconfirmed" });
+
+    // No 302 and no JSON → Google blocked the first hop; doPost never ran → real failure.
     return json({
-      ok: false,
-      error: (parsed && parsed.error) || "delivery-failed",
-      retryable: false,
-      status: resp.status,
-      detail: String(txt).replace(/\s+/g, " ").slice(0, 200)
+      ok: false, error: "delivery-failed", retryable: false,
+      status: resp.status, echoStatus: echoStatus,
+      detail: String(echoText || "").replace(/\s+/g, " ").slice(0, 200)
     });
   } catch (err) {
     // Captcha already spent — don't have the browser retry with the same token.
