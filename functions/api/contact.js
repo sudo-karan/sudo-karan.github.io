@@ -1,25 +1,25 @@
 /* ============================================================================
    Cloudflare Pages Function — POST /api/contact
 
-   The browser hybrid-encrypts {token, fields, meta} with the public key in
-   data.js and POSTs { enc } here. This Function:
-     1. RSA-decrypts the payload with the private key (env, never in the repo),
-     2. verifies the Cloudflare Turnstile token,
-     3. enriches with IP / geo / ISP derived SERVER-SIDE from `request.cf`
-        (so the browser never sends them and makes no third-party geo calls),
-     4. forwards server→server to the Apps Script web app (which logs + emails).
+   Google blocks Cloudflare's Worker egress IPs from POSTing to an Apps Script web
+   app (a 401 sign-in page, regardless of headers), so the Function can't deliver
+   the message itself. Instead it does the parts only a server can:
+     1. RSA-decrypts the browser's { enc } payload with the private key,
+     2. enriches it with IP / geo / ISP derived SERVER-SIDE from `request.cf`
+        (so the browser never gathers geo and makes no third-party lookup),
+     3. hands the enriched payload back to the browser as an OBFUSCATED blob.
+   The BROWSER then relays that blob to Apps Script (which it *can* reach). The
+   Turnstile token is left untouched here and verified by Apps Script, so it stays
+   single-use.
 
-   The whole thing is invisible in the visitor's Network tab except the opaque
-   { enc } blob. Env (Cloudflare Pages → Settings → Environment variables):
-     PRIVATE_KEY       RSA-OAEP private key, PKCS8 base64 (pairs with data.js publicKey)
-     TURNSTILE_SECRET  Cloudflare Turnstile secret key
-     APPS_SCRIPT_URL   the Apps Script /exec URL
-     SHARED_SECRET     secret the Apps Script checks (proves this Function sent it)
-
-   `retryable` in error responses tells the browser whether the Turnstile token
-   was already spent: retryable failures happen BEFORE siteverify, so the browser
-   may safely fall back to its obfuscated direct path with the same token.
+   Env (Cloudflare Pages → Settings → Environment variables):
+     PRIVATE_KEY   RSA-OAEP private key, PKCS8 base64 (pairs with data.js publicKey)
+   (TURNSTILE_SECRET / APPS_SCRIPT_URL / SHARED_SECRET are no longer used.)
    ========================================================================== */
+
+// Must match OBF_KEY in assets/js/app.js and Code.gs — the browser relays this blob
+// to Apps Script, which de-obfuscates it with the same key.
+const OBF_KEY = "7Qp2xL9vRt4Ke1Zc8Nb3Ym6Wd5Hs0Ja";
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
 function json(obj, status) { return new Response(JSON.stringify(obj), { status: status || 200, headers: JSON_HEADERS }); }
@@ -28,6 +28,14 @@ function b64ToBytes(b64) {
   const bin = atob(b64), arr = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
   return arr;
+}
+
+// XOR-then-base64, identical to app.js obfuscate() and reversible by Code.gs deob().
+function obfuscate(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i] ^ (OBF_KEY.charCodeAt(i % OBF_KEY.length) & 0xff));
+  return btoa(bin);
 }
 
 async function hybridDecrypt(enc, pkcs8B64) {
@@ -60,44 +68,26 @@ export async function onRequestPost({ request, env }) {
   let inner;
   try {
     const body = await request.json();
-    if (!body || !body.enc || !body.enc.k) return json({ ok: false, error: "bad-request", retryable: true });
+    if (!body || !body.enc || !body.enc.k) return json({ ok: false, error: "bad-request" });
     inner = await hybridDecrypt(body.enc, env.PRIVATE_KEY);
   } catch (err) {
-    // Decrypt/parse failed → the Turnstile token was never spent → safe to retry.
-    return json({ ok: false, error: "decrypt-failed", retryable: true });
+    return json({ ok: false, error: "decrypt-failed" });
   }
 
   const token = inner.token || "";
   const fields = inner.fields || {};
   const clientMeta = inner.meta || {};
 
-  // Validate BEFORE spending the captcha so validation failures stay retryable.
   if (!fields.name || !fields.email || !fields.subject || !fields.message) {
-    return json({ ok: false, error: "missing-fields", retryable: true });
+    return json({ ok: false, error: "missing-fields" });
   }
 
-  const ip = request.headers.get("CF-Connecting-IP") || "";
-
-  // Verify Turnstile — this SPENDS the single-use token, so any failure past here
-  // is NOT retryable (the browser must not re-send it on the fallback path).
-  if (env.TURNSTILE_SECRET) {
-    let vr = {};
-    try {
-      const form = new FormData();
-      form.append("secret", env.TURNSTILE_SECRET);
-      form.append("response", token);
-      if (ip) form.append("remoteip", ip);
-      vr = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", { method: "POST", body: form }).then((r) => r.json());
-    } catch (e) { vr = {}; }
-    if (!vr.success) return json({ ok: false, error: "failed-captcha", retryable: false, codes: vr["error-codes"] || [] });
-  }
-
-  // Server-derived signals from Cloudflare's edge — never sent by the browser.
+  // Server-derived signals from Cloudflare's edge — never gathered by the browser.
   const cf = request.cf || {};
   const ua = request.headers.get("User-Agent") || "";
   const p = uaParse(ua);
   const meta = Object.assign({}, clientMeta, {
-    ip: ip,
+    ip: request.headers.get("CF-Connecting-IP") || "",
     country: cf.country || "",
     city: cf.city || "",
     state: cf.region || "",
@@ -118,55 +108,9 @@ export async function onRequestPost({ request, env }) {
   if (!meta.platform) meta.platform = p.platform;
   if (!meta.timezone) meta.timezone = cf.timezone || "";
 
-  // Forward server→server to Apps Script (invisible to the browser).
-  // Apps Script runs doPost on the POST (committing the Sheet row + email), then
-  // 302-redirects to a script.googleusercontent.com "echo" URL that renders the
-  // result. Cloudflare Workers' fetch sends NO User-Agent by default, which makes
-  // Google serve a 401 sign-in page instead of running the app — so we send a real
-  // browser User-Agent on BOTH hops (this is the actual fix). A 302 to the echo
-  // host means doPost already ran, so if that echo body is ever unreadable we still
-  // treat it as delivered.
-  const FWD_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "application/json, text/html;q=0.9,*/*;q=0.8"
-  };
-  try {
-    const resp = await fetch(env.APPS_SCRIPT_URL, {
-      method: "POST",
-      redirect: "manual", // detect the 302 ourselves so we can use it as the success signal
-      headers: Object.assign({ "Content-Type": "text/plain;charset=utf-8" }, FWD_HEADERS),
-      body: JSON.stringify({ secret: env.SHARED_SECRET, fields: fields, meta: meta })
-    });
-
-    const isRedirect = resp.status >= 300 && resp.status < 400;
-    const loc = isRedirect ? resp.headers.get("Location") : null;
-    const ranDoPost = !!(loc && /script\.googleusercontent\.com/.test(loc));
-
-    // Read Apps Script's real answer from the echo (GET, same UA, no body).
-    let parsed = null, echoStatus = 0, echoText = "";
-    try {
-      const echo = loc ? await fetch(loc, { method: "GET", headers: FWD_HEADERS }) : resp;
-      echoStatus = echo.status;
-      echoText = await echo.text();
-      try { parsed = JSON.parse(echoText); } catch (_) { parsed = null; }
-    } catch (_) { parsed = null; }
-
-    if (parsed && parsed.ok === true) return json({ ok: true });
-    if (parsed && parsed.ok === false) return json({ ok: false, error: parsed.error || "delivery-failed", retryable: false });
-
-    // Couldn't read the body, but the POST 302'd to Google's echo host → doPost has
-    // already committed the row + email (its only rejectable condition, a bad shared
-    // secret, is impossible here since the Worker owns it). Treat as delivered.
-    if (ranDoPost) return json({ ok: true, note: "delivered-unconfirmed" });
-
-    // No 302 and no JSON → Google blocked the first hop; doPost never ran → real failure.
-    return json({
-      ok: false, error: "delivery-failed", retryable: false,
-      status: resp.status, echoStatus: echoStatus,
-      detail: String(echoText || "").replace(/\s+/g, " ").slice(0, 200)
-    });
-  } catch (err) {
-    // Captcha already spent — don't have the browser retry with the same token.
-    return json({ ok: false, error: "delivery-failed", retryable: false, detail: String((err && err.message) || err) });
-  }
+  // Hand the enriched payload back to the browser as an obfuscated blob; the browser
+  // relays it to Apps Script (which the Worker's own IP can't reach). Apps Script
+  // verifies the (untouched, single-use) Turnstile token from inside the blob.
+  const relay = obfuscate(JSON.stringify({ token: token, fields: fields, meta: meta }));
+  return json({ ok: true, relay: relay });
 }

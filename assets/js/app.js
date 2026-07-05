@@ -327,12 +327,12 @@
       var onGithub = /(^|\.)github\.io$/i.test(location.hostname);
 
       // Preferred path (Cloudflare): hybrid-encrypt {token,fields,meta} and POST it
-      // to the same-origin Function, which derives IP/geo server-side. The browser
-      // sends no readable data and makes no third-party geo calls. Resolves on a
-      // real {ok:true}; rejects {fallback:true} when there's no Function here or the
-      // error is retryable (Turnstile token not yet spent), else {fallback:false}.
+      // to the same-origin Function, which decrypts it and adds server-side IP/geo,
+      // then hands back an OBFUSCATED blob. Google blocks the Worker from posting to
+      // Apps Script, so the BROWSER relays that blob to Apps Script itself. The
+      // Turnstile token is untouched by the Worker, so falling back is always safe.
       function cloudflarePath() {
-        if (onGithub || !window.crypto || !window.crypto.subtle) return Promise.reject({ fallback: true });
+        if (onGithub || !window.crypto || !window.crypto.subtle) return Promise.reject();
         return gatherMeta({ withGeo: false })
           .then(function (meta) { return hybridEncrypt(JSON.stringify({ token: token, fields: fields, meta: meta }), S.contact.publicKey); })
           .then(function (enc) {
@@ -341,13 +341,17 @@
             });
           })
           .then(function (r) {
-            if (r.status === 404 || r.status === 405) return Promise.reject({ fallback: true }); // no Function on this host
+            if (!r.ok) return Promise.reject(); // no Function on this host, or an error → fall back
             return r.json().catch(function () { return {}; }).then(function (j) {
-              if (j && j.ok) return true;
-              // Function answered: only retryable failures (before the captcha was spent) may fall back.
-              return Promise.reject({ fallback: !!(j && j.retryable), error: (j && j.error) || "send-failed" });
+              if (!j || !j.ok || !j.relay) return Promise.reject();
+              // Relay the Worker's obfuscated, server-enriched blob to Apps Script.
+              return fetch(S.contact.fallbackEndpoint, {
+                method: "POST", mode: "no-cors",
+                headers: { "Content-Type": "text/plain;charset=utf-8" },
+                body: JSON.stringify({ obf: j.relay })
+              }).then(function () { return true; });
             });
-          }, function () { return Promise.reject({ fallback: true }); }); // network error → token not spent
+          });
       }
 
       // Fallback (GitHub Pages, or Function unreachable): gather geo client-side,
@@ -370,8 +374,9 @@
         setStatus('Couldn’t send right now. Please <a href="' + mailtoFallback(v) + '">email me directly</a>.', "err");
       }
 
-      cloudflarePath().then(function () { showSent(v); }, function (reason) {
-        if (reason && reason.fallback === false) { onError(); return; } // token already spent — don't retry
+      // The Worker never spends the Turnstile token, so any failure of the preferred
+      // path can safely fall back to the direct obfuscated post with the same token.
+      cloudflarePath().then(function () { showSent(v); }, function () {
         fallbackPath().then(function () { showSent(v); }, onError);
       });
     });
