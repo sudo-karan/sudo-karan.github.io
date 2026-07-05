@@ -6,18 +6,23 @@ It takes two paths automatically:
 
 | | **Cloudflare path** (preferred) | **GitHub Pages fallback** |
 |---|---|---|
-| Browser sends | a hybrid-**encrypted** blob `{enc}` | an **obfuscated** blob `{obf}` |
-| IP / geo / ISP | derived **server-side** in the Function (never leaves the browser; no 3rd-party geo calls) | gathered client-side, then obfuscated |
-| Turnstile verified in | the Cloudflare Function | the Apps Script |
-| Then | Function decrypts + forwards to Apps Script | posts straight to Apps Script |
+| Browser → Function | a hybrid-**encrypted** blob `{enc}` | *(no Function on this host)* |
+| IP / geo / ISP | derived **server-side** in the Function from `request.cf` (never gathered by the browser; no 3rd-party geo calls) | gathered client-side, then obfuscated |
+| Delivery to Apps Script | the Function returns an **obfuscated** blob; the **browser relays** it to Apps Script | browser posts the `{obf}` blob straight to Apps Script |
+| Turnstile verified in | the Apps Script (token relayed untouched) | the Apps Script |
+
+> **Why the browser relays it:** Google blocks Cloudflare's Worker egress IPs from
+> POSTing to an Apps Script web app (a 401 sign-in page). So the Function does the
+> server-only work (decrypt + add IP/geo) and hands an obfuscated blob back; the
+> **browser** — which Google *does* accept — posts it to Apps Script.
 
 Either way the Network tab shows only an **opaque blob**, and the Apps Script logs
 every message to a **Google Sheet** and **emails** you.
 
 > **Honesty:** client-side JS is public, so this defeats *casual* inspection, not a
-> determined reverse-engineer (they can read the source and breakpoint before the
-> payload is encrypted). The Cloudflare path is the strong one — IP/geo/ISP are
-> genuinely absent from the browser. The GitHub-Pages fallback is obfuscation only.
+> determined reverse-engineer. The Cloudflare path still adds real value — IP/geo/ISP
+> are derived server-side (accurate, no visible lookup) and the `browser→Function`
+> hop is genuinely RSA-encrypted; the relayed blob and the fallback are obfuscation.
 
 ---
 
@@ -25,11 +30,15 @@ every message to a **Google Sheet** and **emails** you.
 | Name | Where it lives | Public? |
 |---|---|---|
 | Turnstile **site key** | `assets/js/data.js` | yes (by design) |
-| Turnstile **secret key** | Cloudflare Function env **and** Apps Script property | no |
+| Turnstile **secret key** | Apps Script property `TURNSTILE_SECRET` (verifies both paths) | no |
 | RSA **public key** | `assets/js/data.js` (`contact.publicKey`) | yes (by design) |
-| RSA **private key** | Cloudflare Function env `PRIVATE_KEY` only | **no** |
-| `SHARED_SECRET` | Cloudflare Function env **and** Apps Script property (same value) | no |
-| `OBFUSCATION_KEY` | `OBF_KEY` in `app.js` **and** Apps Script property (same value) | yes-ish (obscurity) |
+| RSA **private key** | Cloudflare Function env `PRIVATE_KEY` — the **only** env var it needs | **no** |
+| `OBFUSCATION_KEY` | `OBF_KEY` in `app.js`, the Function, and Apps Script property (same value) | yes-ish (obscurity) |
+
+> The Function only reads **`PRIVATE_KEY`** now. The old `TURNSTILE_SECRET` /
+> `APPS_SCRIPT_URL` / `SHARED_SECRET` Cloudflare env vars are **unused** (harmless to
+> leave, safe to delete) — Turnstile is verified in Apps Script and delivery goes
+> through the browser, so the Function never calls Apps Script.
 
 The RSA keypair for this site is already generated — the **public** key is committed
 in `data.js`; the **private** key was handed over separately to paste into the
