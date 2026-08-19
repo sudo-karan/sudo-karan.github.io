@@ -84,15 +84,18 @@ function doPost(e) {
 
     if (!f.name || !f.email || !f.subject || !f.message) return out({ ok: false, error: 'missing-fields' });
 
-    // --- Email-verified status (server-authoritative: we trust our OWN cache, not
-    // the browser's claim). 'sent_' marks that a code was actually emailed to this
-    // address, so "code sent but never confirmed" is detected here and can't be
-    // hidden by skipping the prompt or tampering with the payload. ---
+    // --- Email-verified status. 'OTP-verified' is server-authoritative (our own
+    // `ver_` cache — never the browser's claim). The "a code was sent but not
+    // confirmed" flag is scoped to THIS submission's flow via a per-flow key set at
+    // send time, so a code from an earlier attempt on the same address can't bleed
+    // into a later message where the sender simply chose not to verify. ---
     var emailVerified = 'Not verified';
     try {
       var eh = otpHash(String(f.email).trim().toLowerCase());
       var vcache = CacheService.getScriptCache();
-      var codeWasSent = !!vcache.get('sent_' + eh);
+      var fsKey = m.otpFlow ? ('fs_' + flowKey(m.otpFlow)) : '';
+      var flowSent = !!(fsKey && vcache.get(fsKey));
+      if (flowSent) vcache.remove(fsKey); // one-time — this flow is now accounted for
       if (vcache.get('ver_' + eh)) {
         emailVerified = 'OTP-verified ✅';
         vcache.remove('ver_' + eh); // one-time — applies to this message
@@ -100,9 +103,10 @@ function doPost(e) {
         emailVerified = 'OTP limit reached, not verified ⚠️';   // used all 3 codes for the hour
       } else if (m.otpStatus === 'too-many-attempts') {
         emailVerified = 'Too many wrong attempts, not verified ⚠️';
-      } else if (codeWasSent || m.otpStatus === 'sent-ignored') {
-        // Floor: a code WAS emailed but never confirmed. `codeWasSent` is our own
-        // record, so this can't be downgraded by tampering with the client's status.
+      } else if (flowSent || m.otpStatus === 'sent-ignored') {
+        // A code went out in THIS flow but was never confirmed. `flowSent` is our own
+        // record for this flow, so an honest client that sent a code can't have it
+        // silently dropped — while a *fresh* skip (no code this flow) reads no marker.
         emailVerified = 'OTP sent, not verified ⚠️';
       } else if (m.otpStatus === 'attempted-failed') {
         emailVerified = 'Verification unavailable ⚠️';          // couldn't send a code (service/quota)
@@ -174,7 +178,7 @@ function doGet(e) {
   var p = (e && e.parameter) || {};
   var action = p.action;
   var result;
-  if (action === 'send-otp') result = sendOtp(p.email);
+  if (action === 'send-otp') result = sendOtp(p.email, p.flow);
   else if (action === 'verify-otp') result = verifyOtp(p.email, p.code);
   else result = { ok: true, note: 'POST only' };
   return respond(result, p.callback);
@@ -195,6 +199,8 @@ function otpHash(email) {
   var d = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, 'otp:' + email);
   return Utilities.base64EncodeWebSafe(d).replace(/=+$/, '');
 }
+// Sanitised cache-key suffix for the client's per-submission flow id.
+function flowKey(flow) { return String(flow == null ? '' : flow).replace(/[^A-Za-z0-9]/g, '').slice(0, 48); }
 
 // Atomically reserve one code-send slot for today. Keeps OTP under OTP_DAILY_CAP
 // AND always leaves >15 of Gmail's daily quota for message notifications.
@@ -218,7 +224,7 @@ function otpReserve() {
   }
 }
 
-function sendOtp(email) {
+function sendOtp(email, flow) {
   email = normEmail(email);
   if (!validEmail(email)) return { sent: false, reason: 'bad-email' };
   var cache = CacheService.getScriptCache();
@@ -244,7 +250,7 @@ function sendOtp(email) {
   rl.count += 1;
   var ttl = Math.max(60, Math.ceil((3600000 - elapsed) / 1000)); // expire at the 1-hour edge
   cache.put('rl_' + h, JSON.stringify(rl), ttl);
-  cache.put('sent_' + h, '1', ttl);                              // "a code was delivered here"
+  if (flow) cache.put('fs_' + flowKey(flow), '1', 900);          // "a code went out in THIS flow"
   cache.put('code_' + h, JSON.stringify({ code: code, tries: 0 }), 600); // 10 min
   return { sent: true, remaining: 3 - rl.count }; // codes left after this one (2, then 1, then 0)
 }
@@ -262,7 +268,6 @@ function verifyOtp(email, code) {
   if (rec.tries > 5) { cache.remove('code_' + h); return { verified: false, reason: 'too-many' }; }
   if (code && code === rec.code) {
     cache.remove('code_' + h);
-    cache.remove('sent_' + h);       // verified supersedes the "code delivered" flag
     cache.put('ver_' + h, '1', 900); // verified for 15 min — long enough to submit
     return { verified: true };
   }
