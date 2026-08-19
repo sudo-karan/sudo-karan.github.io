@@ -367,8 +367,8 @@
       submitBtn.disabled = true;
       setStatus("", "");
       // Offer optional email verification, then send with the resulting status.
-      runOtpFlow(v).then(function (otpStatus) {
-        sendMessage(v, token, otpStatus);
+      runOtpFlow(v).then(function (res) {
+        sendMessage(v, token, res.status, res.flow);
       }, function () { submitBtn.disabled = false; }); // modal cancelled
     });
 
@@ -392,11 +392,11 @@
     // Deliver the message (Cloudflare relay path, else obfuscated fallback), tagging
     // the meta with the OTP status ('verified' | 'attempted-failed' | 'not-attempted').
     // Note: 'verified' is only *advisory* here — Apps Script confirms it server-side.
-    function sendMessage(v, token, otpStatus) {
+    function sendMessage(v, token, otpStatus, otpFlow) {
       enterSending();
       var fields = { name: v.name, email: v.email, subject: v.subject, org: v.org, message: v.message };
       var onGithub = /(^|\.)github\.io$/i.test(location.hostname);
-      function withOtp(meta) { meta.otpStatus = otpStatus; return meta; }
+      function withOtp(meta) { meta.otpStatus = otpStatus; if (otpFlow) meta.otpFlow = otpFlow; return meta; }
 
       function cloudflarePath() {
         if (onGithub || !window.crypto || !window.crypto.subtle) return Promise.reject();
@@ -482,13 +482,16 @@
     var modalBody = document.getElementById("otpBody");
     function runOtpFlow(v) {
       return new Promise(function (resolve, reject) {
-        if (!modal || !modalBody) { resolve("not-attempted"); return; }
+        // One id per submission attempt. A "code sent" fact is recorded against THIS
+        // id, so it can never bleed into a later message that didn't send a code.
+        var flowId = "f" + (+new Date()).toString(36) + Math.random().toString(36).slice(2, 8);
+        if (!modal || !modalBody) { resolve({ status: "not-attempted", flow: flowId }); return; }
         var endpoint = S.contact.fallbackEndpoint, settled = false;
         var closeBtn = document.getElementById("otpClose");
         function onKey(ev) { if (ev.key === "Escape") cancel(); }
         function onBackdrop(ev) { if (ev.target === modal) cancel(); }
         function teardown() { document.removeEventListener("keydown", onKey); modal.removeEventListener("click", onBackdrop); modal.hidden = true; document.body.classList.remove("modal-open"); }
-        function finish(status) { if (settled) return; settled = true; teardown(); resolve(status); }
+        function finish(status) { if (settled) return; settled = true; teardown(); resolve({ status: status, flow: flowId }); }
         function cancel() { if (settled) return; settled = true; teardown(); reject(new Error("cancel")); }
         if (closeBtn) closeBtn.onclick = cancel;
         modal.addEventListener("click", onBackdrop);
@@ -546,7 +549,7 @@
         }
         function startSend() {
           renderSending();
-          jsonp(endpoint, { action: "send-otp", email: v.email }).then(function (r) {
+          jsonp(endpoint, { action: "send-otp", email: v.email, flow: flowId }).then(function (r) {
             if (r && r.sent) renderEnter("", "", (typeof r.remaining === "number" ? r.remaining : null));
             else if (r && r.reason === "quota") renderUnavailable("We’re experiencing verification delays right now. Please go ahead and send without verification.", "attempted-failed");
             else if (r && r.reason === "rate-limit") renderUnavailable("You’ve used all 3 codes for this email" + (r.retryMins ? " — try again in about " + r.retryMins + " min" : "") + ". Please send without verification, or try again later.", "limit-exhausted");

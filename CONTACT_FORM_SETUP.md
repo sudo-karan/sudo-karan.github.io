@@ -120,14 +120,16 @@ asks whether to verify their email via a 6-digit code (or send without). It reus
   10 min in `CacheService`, max 5 tries. Up to **3 codes per email per hour** (1 send
   + 2 resends); the popup shows a live "N left" counter, then a ~1-hour cooldown
   message with the remaining minutes.
-- **Server-authoritative badge:** Apps Script records both that a code was *emailed*
-  to an address (`sent_`) and that one was *confirmed* (`ver_`). `doPost` reads its
-  own cache — never the browser's claim — and stamps the **"Email verified"** column
-  with one of these:
+- **Server-authoritative badge:** `OTP-verified` comes from Apps Script's own `ver_`
+  cache — never the browser's claim, so it can't be faked. The "a code was sent"
+  fact is recorded against a **per-submission flow id** (`fs_<flow>`), not the email,
+  so a code from an *earlier* attempt on the same address can't bleed into a later
+  message where the sender simply chose not to verify. `doPost` stamps the
+  **"Email verified"** column with one of these:
   - `OTP-verified ✅` — code confirmed.
-  - `OTP sent, not verified ⚠️` — a code **was emailed but never confirmed** (the
-    sender skipped it). **Floored server-side** via `sent_`, so a malicious sender
-    can't downgrade or hide it by skipping the prompt or editing the payload.
+  - `OTP sent, not verified ⚠️` — a code **was emailed in this flow but never
+    confirmed** (the sender skipped it). Floored by the server's own `fs_` marker for
+    that flow, so an honest client that sent a code can't have it silently dropped.
   - `OTP limit reached, not verified ⚠️` — the sender used all 3 codes for the hour
     without confirming.
   - `Too many wrong attempts, not verified ⚠️` — the sender entered the wrong code
