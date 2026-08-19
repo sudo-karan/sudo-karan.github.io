@@ -245,6 +245,50 @@
     }
     (function () { var m = fieldOf("message"); if (m) m.addEventListener("input", updateCount); updateCount(); })();
 
+    // --- inline email typo-catch: "Did you mean gmail.com?" (zero backend) ---
+    var COMMON_DOMAINS = ["gmail.com", "googlemail.com", "yahoo.com", "yahoo.co.in", "hotmail.com",
+      "outlook.com", "live.com", "icloud.com", "me.com", "aol.com", "proton.me", "protonmail.com",
+      "ymail.com", "msn.com", "mail.com", "rediffmail.com", "zoho.com"];
+    function lev(a, b) {
+      var m = a.length, n = b.length, d = [], i, j;
+      if (!m) return n; if (!n) return m;
+      for (i = 0; i <= m; i++) d[i] = [i];
+      for (j = 0; j <= n; j++) d[0][j] = j;
+      for (i = 1; i <= m; i++) for (j = 1; j <= n; j++)
+        d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a.charAt(i - 1) === b.charAt(j - 1) ? 0 : 1));
+      return d[m][n];
+    }
+    function suggestEmailFix(email) {
+      var mm = /^([^\s@]+)@([^\s@]+)$/.exec(String(email).trim().toLowerCase());
+      if (!mm) return null;
+      var local = mm[1], domain = mm[2];
+      if (domain.indexOf(".") === -1 || COMMON_DOMAINS.indexOf(domain) !== -1) return null;
+      var best = null, bestD = 99;
+      COMMON_DOMAINS.forEach(function (d) { var x = lev(domain, d); if (x < bestD) { bestD = x; best = d; } });
+      return (best && bestD > 0 && bestD <= 2) ? local + "@" + best : null;
+    }
+    var emailInp = fieldOf("email"), suggestEl = null;
+    function showEmailSuggest() {
+      if (!emailInp) return;
+      if (!suggestEl) {
+        suggestEl = el("small", "email-suggest");
+        var wrap = emailInp.closest(".field");
+        if (wrap) wrap.appendChild(suggestEl); else return;
+      }
+      var s = suggestEmailFix(emailInp.value);
+      if (s) {
+        suggestEl.innerHTML = 'Did you mean <button type="button" class="link-fix">' + esc(s) + "</button>?";
+        suggestEl.hidden = false;
+        suggestEl.querySelector(".link-fix").addEventListener("click", function () {
+          emailInp.value = s; suggestEl.hidden = true; setErr("email", ""); emailInp.focus();
+        });
+      } else { suggestEl.hidden = true; suggestEl.innerHTML = ""; }
+    }
+    if (emailInp) {
+      emailInp.addEventListener("blur", showEmailSuggest);
+      emailInp.addEventListener("input", function () { if (suggestEl && !suggestEl.hidden) showEmailSuggest(); });
+    }
+
     function validate(v) {
       clearErrs();
       var first = null;
@@ -321,65 +365,188 @@
       if (!token) { setStatus("Please complete the “I’m human” check.", "err"); return; }
 
       submitBtn.disabled = true;
-      setStatus("Sending…", "");
+      setStatus("", "");
+      // Offer optional email verification, then send with the resulting status.
+      runOtpFlow(v).then(function (otpStatus) {
+        setStatus("Sending…", "");
+        sendMessage(v, token, otpStatus);
+      }, function () { submitBtn.disabled = false; }); // modal cancelled
+    });
 
+    // Deliver the message (Cloudflare relay path, else obfuscated fallback), tagging
+    // the meta with the OTP status ('verified' | 'attempted-failed' | 'not-attempted').
+    // Note: 'verified' is only *advisory* here — Apps Script confirms it server-side.
+    function sendMessage(v, token, otpStatus) {
       var fields = { name: v.name, email: v.email, subject: v.subject, org: v.org, message: v.message };
       var onGithub = /(^|\.)github\.io$/i.test(location.hostname);
+      function withOtp(meta) { meta.otpStatus = otpStatus; return meta; }
 
-      // Preferred path (Cloudflare): hybrid-encrypt {token,fields,meta} and POST it
-      // to the same-origin Function, which decrypts it and adds server-side IP/geo,
-      // then hands back an OBFUSCATED blob. Google blocks the Worker from posting to
-      // Apps Script, so the BROWSER relays that blob to Apps Script itself. The
-      // Turnstile token is untouched by the Worker, so falling back is always safe.
       function cloudflarePath() {
         if (onGithub || !window.crypto || !window.crypto.subtle) return Promise.reject();
         return gatherMeta({ withGeo: false })
-          .then(function (meta) { return hybridEncrypt(JSON.stringify({ token: token, fields: fields, meta: meta }), S.contact.publicKey); })
+          .then(function (meta) { return hybridEncrypt(JSON.stringify({ token: token, fields: fields, meta: withOtp(meta) }), S.contact.publicKey); })
           .then(function (enc) {
-            return fetch(S.contact.apiEndpoint, {
-              method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enc: enc })
-            });
+            return fetch(S.contact.apiEndpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enc: enc }) });
           })
           .then(function (r) {
-            if (!r.ok) return Promise.reject(); // no Function on this host, or an error → fall back
+            if (!r.ok) return Promise.reject();
             return r.json().catch(function () { return {}; }).then(function (j) {
               if (!j || !j.ok || !j.relay) return Promise.reject();
-              // Relay the Worker's obfuscated, server-enriched blob to Apps Script.
-              return fetch(S.contact.fallbackEndpoint, {
-                method: "POST", mode: "no-cors",
-                headers: { "Content-Type": "text/plain;charset=utf-8" },
-                body: JSON.stringify({ obf: j.relay })
-              }).then(function () { return true; });
+              return fetch(S.contact.fallbackEndpoint, { method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ obf: j.relay }) }).then(function () { return true; });
             });
           });
       }
-
-      // Fallback (GitHub Pages, or Function unreachable): gather geo client-side,
-      // OBFUSCATE the whole {token,fields,meta}, and post it straight to Apps Script.
-      // no-cors → opaque response, so success is optimistic once it's sent.
       function fallbackPath() {
         return gatherMeta({ withGeo: true }).then(function (meta) {
-          var blob = obfuscate(JSON.stringify({ token: token, fields: fields, meta: meta }), OBF_KEY);
-          return fetch(S.contact.fallbackEndpoint, {
-            method: "POST", mode: "no-cors",
-            headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify({ obf: blob })
-          });
+          var blob = obfuscate(JSON.stringify({ token: token, fields: fields, meta: withOtp(meta) }), OBF_KEY);
+          return fetch(S.contact.fallbackEndpoint, { method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ obf: blob }) });
         }).then(function () { return true; });
       }
-
       function onError() {
         submitBtn.disabled = false;
-        if (window.turnstile && widgetId != null) window.turnstile.reset(widgetId);
-        setStatus('Couldn’t send right now. Please <a href="' + mailtoFallback(v) + '">email me directly</a>.', "err");
+        if (window.turnstile && widgetId != null) { try { window.turnstile.reset(widgetId); } catch (e) {} }
+        showFailure(v);
       }
-
-      // The Worker never spends the Turnstile token, so any failure of the preferred
-      // path can safely fall back to the direct obfuscated post with the same token.
       cloudflarePath().then(function () { showSent(v); }, function () {
         fallbackPath().then(function () { showSent(v); }, onError);
       });
-    });
+    }
+
+    // On failure, don't lose the message: a button that opens their mail app with
+    // it pre-loaded (name/subject/message only — no metadata), plus a copy button
+    // (works even when no default mail app is configured).
+    function showFailure(v) {
+      setStatus('Couldn’t send right now — your message isn’t lost:' +
+        '<span class="fail-actions">' +
+        '<a class="btn small" href="' + mailtoFallback(v) + '">📧 Open in your email app</a>' +
+        '<button type="button" class="btn small ghost" id="copyMsgBtn">Copy message</button>' +
+        '</span>', "err");
+      var cb = document.getElementById("copyMsgBtn");
+      if (cb) cb.addEventListener("click", function () { copyMessage(v, cb); });
+    }
+    function copyMessage(v, btn) {
+      var body = "From: " + v.name + (v.org ? " (" + v.org + ")" : "") + "\nEmail: " + v.email +
+        "\nSubject: " + (v.subject || "") + "\n\n" + v.message;
+      function done() { if (btn) { btn.textContent = "Copied ✓"; setTimeout(function () { btn.textContent = "Copy message"; }, 2500); } }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(body).then(done, function () { legacyCopy(body); done(); });
+      } else { legacyCopy(body); done(); }
+    }
+    function legacyCopy(text) {
+      try {
+        var ta = document.createElement("textarea");
+        ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+        document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta);
+      } catch (e) {}
+    }
+
+    // JSONP call to the Apps Script /exec (Apps Script can't send CORS headers, so a
+    // <script> callback is how the page reads OTP results). Resolves with the object.
+    function jsonp(base, params) {
+      return new Promise(function (resolve, reject) {
+        var cb = "otpcb_" + (jsonp._n = (jsonp._n || 0) + 1) + "_" + (+new Date());
+        var s = document.createElement("script");
+        var timer = setTimeout(function () { done(); reject(new Error("timeout")); }, 12000);
+        function done() { try { delete window[cb]; } catch (e) { window[cb] = undefined; } if (s.parentNode) s.parentNode.removeChild(s); clearTimeout(timer); }
+        window[cb] = function (data) { done(); resolve(data || {}); };
+        s.onerror = function () { done(); reject(new Error("network")); };
+        var qs = "callback=" + cb;
+        for (var k in params) if (params.hasOwnProperty(k)) qs += "&" + k + "=" + encodeURIComponent(params[k]);
+        s.src = base + (base.indexOf("?") === -1 ? "?" : "&") + qs;
+        document.head.appendChild(s);
+      });
+    }
+
+    // Optional email-OTP modal. Resolves with an otpStatus string; rejects if the
+    // visitor closes the dialog. Every dead-end still offers "send without verifying".
+    var modal = document.getElementById("otpModal");
+    var modalBody = document.getElementById("otpBody");
+    function runOtpFlow(v) {
+      return new Promise(function (resolve, reject) {
+        if (!modal || !modalBody) { resolve("not-attempted"); return; }
+        var endpoint = S.contact.fallbackEndpoint, settled = false;
+        var closeBtn = document.getElementById("otpClose");
+        function onKey(ev) { if (ev.key === "Escape") cancel(); }
+        function onBackdrop(ev) { if (ev.target === modal) cancel(); }
+        function teardown() { document.removeEventListener("keydown", onKey); modal.removeEventListener("click", onBackdrop); modal.hidden = true; document.body.classList.remove("modal-open"); }
+        function finish(status) { if (settled) return; settled = true; teardown(); resolve(status); }
+        function cancel() { if (settled) return; settled = true; teardown(); reject(new Error("cancel")); }
+        if (closeBtn) closeBtn.onclick = cancel;
+        modal.addEventListener("click", onBackdrop);
+        document.addEventListener("keydown", onKey);
+
+        function h(html) { modalBody.innerHTML = html; }
+        function focusFirst() { var b = modalBody.querySelector("button, input"); if (b) b.focus(); }
+        function setNote(msg, kind) { var n = document.getElementById("otpNote"); if (n) { n.textContent = msg; n.className = "otp-note" + (kind ? " " + kind : ""); } }
+
+        function renderChoose() {
+          h('<h3 id="otpHeading">Verify your email?</h3>' +
+            '<p class="modal-sub">Verifying <strong>' + esc(v.email) + '</strong> lets me reply reliably and catches typos like <em>gmial.com</em> — but it’s optional.</p>' +
+            '<div class="modal-actions">' +
+            '<button type="button" class="btn primary" id="otpVerify">Verify via code</button>' +
+            '<button type="button" class="btn ghost" id="otpSkip">Send without verifying</button>' +
+            '</div>');
+          document.getElementById("otpVerify").onclick = startSend;
+          document.getElementById("otpSkip").onclick = function () { finish("not-attempted"); };
+          focusFirst();
+        }
+        function renderSending() {
+          h('<h3 id="otpHeading">Sending code…</h3>' +
+            '<p class="modal-sub">Emailing a 6-digit code to <strong>' + esc(v.email) + '</strong>.</p>' +
+            '<div class="modal-spinner" aria-hidden="true"></div>');
+        }
+        function renderUnavailable(msg) {
+          h('<h3 id="otpHeading">Verification unavailable</h3>' +
+            '<p class="modal-sub">' + esc(msg) + '</p>' +
+            '<div class="modal-actions"><button type="button" class="btn primary" id="otpAnyway">Send without verifying</button></div>');
+          document.getElementById("otpAnyway").onclick = function () { finish("attempted-failed"); };
+          focusFirst();
+        }
+        function renderEnter(note, noteKind) {
+          h('<h3 id="otpHeading">Enter the code</h3>' +
+            '<p class="modal-sub">We emailed a 6-digit code to <strong>' + esc(v.email) + '</strong>. It expires in 10 minutes.</p>' +
+            '<input class="otp-input" id="otpCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" aria-label="6-digit code" />' +
+            '<p class="otp-note' + (noteKind ? " " + noteKind : "") + '" id="otpNote">' + (note ? esc(note) : "") + '</p>' +
+            '<div class="modal-actions">' +
+            '<button type="button" class="btn primary" id="otpCheck">Verify &amp; send</button>' +
+            '<button type="button" class="btn ghost" id="otpResend">Resend</button>' +
+            '<button type="button" class="btn ghost" id="otpSkip2">Send without verifying</button>' +
+            '</div>');
+          var inp = document.getElementById("otpCode");
+          inp.addEventListener("input", function () { inp.value = inp.value.replace(/\D/g, "").slice(0, 6); });
+          inp.addEventListener("keydown", function (ev) { if (ev.key === "Enter") { ev.preventDefault(); doVerify(); } });
+          document.getElementById("otpCheck").onclick = doVerify;
+          document.getElementById("otpResend").onclick = startSend;
+          document.getElementById("otpSkip2").onclick = function () { finish("attempted-failed"); };
+          inp.focus();
+        }
+        function startSend() {
+          renderSending();
+          jsonp(endpoint, { action: "send-otp", email: v.email }).then(function (r) {
+            if (r && r.sent) renderEnter("", "");
+            else if (r && r.reason === "quota") renderUnavailable("We’re experiencing verification delays right now. Please go ahead and send without verification.");
+            else if (r && r.reason === "rate-limit") renderUnavailable("Too many code requests for this email. Please send without verification, or try again in a bit.");
+            else if (r && r.reason === "bad-email") renderUnavailable("That email doesn’t look valid — please check it, or send without verification.");
+            else renderUnavailable("Couldn’t send a code just now. Please go ahead and send without verification.");
+          }, function () { renderUnavailable("Couldn’t reach the verification service. Please go ahead and send without verification."); });
+        }
+        function doVerify() {
+          var inp = document.getElementById("otpCode"), code = inp ? inp.value.trim() : "";
+          if (code.length !== 6) { setNote("Enter the 6-digit code.", "warn"); return; }
+          setNote("Checking…", "");
+          jsonp(endpoint, { action: "verify-otp", email: v.email, code: code }).then(function (r) {
+            if (r && r.verified) finish("verified");
+            else if (r && r.reason === "expired") renderEnter("That code expired — tap Resend for a new one.", "warn");
+            else if (r && r.reason === "too-many") renderUnavailable("Too many incorrect attempts. Please send without verification, or try again later.");
+            else { var left = (r && typeof r.triesLeft === "number") ? " (" + r.triesLeft + " left)" : ""; setNote("Incorrect code" + left + ".", "warn"); }
+          }, function () { setNote("Couldn’t verify just now — try again, or send without verification.", "warn"); });
+        }
+
+        renderChoose();
+        modal.hidden = false;
+        document.body.classList.add("modal-open");
+      });
+    }
   }
 
   // Best-effort, silent metadata (no permission prompt): browser/OS from UA,

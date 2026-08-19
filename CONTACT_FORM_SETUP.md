@@ -63,6 +63,8 @@ Cloudflare `PRIVATE_KEY` env var. To rotate it, generate a new pair (Web Crypto
    - `SHARED_SECRET` — any long random string; **must match** the Cloudflare env below.
    - `OBFUSCATION_KEY` — *(optional)* must match `OBF_KEY` in `app.js`; if omitted,
      the built-in default in `Code.gs` (which matches `app.js`) is used.
+   - `OTP_DAILY_CAP` — *(optional)* max verification codes emailed per day (default
+     **85**); the rest of Gmail's ~100/day stays reserved for message notifications.
    - `SHEET_ID` — *(optional)* the Sheet id; omit to use the bound Sheet.
 4. **Deploy → New deployment → Web app** — *Execute as:* **Me**, *Who has access:*
    **Anyone** → run `doPost` once, **Allow** all permissions → copy the **`/exec`** URL.
@@ -105,3 +107,31 @@ declares the project so `functions/` compiles.
 > CPU-arch come through blank there — everything else still lands. Chromium browsers
 > (Chrome/Edge/Android) fill the most. On the Cloudflare path, IP/geo/ISP always land
 > (from the edge) regardless of browser.
+
+---
+
+## Email verification (OTP) & typo-catch
+
+The form offers **optional** email verification. After a visitor hits Send, a popup
+asks whether to verify their email via a 6-digit code (or send without). It reuses
+**your Gmail** (no new service) via JSONP calls to the Apps Script `/exec`:
+
+- **Send/verify:** `doGet(action=send-otp|verify-otp)` — a code is emailed, held for
+  10 min in `CacheService`, max 5 tries, max 3 codes per email per hour.
+- **Server-authoritative badge:** on success Apps Script records the verified email
+  in its own cache; `doPost` reads that and stamps the Sheet/email **"Email verified"**
+  column as `OTP-verified ✅`, `Attempted — unavailable ⚠️`, or `Not verified`. The
+  badge is decided server-side, so it can't be faked from the page.
+- **Daily cap:** at most `OTP_DAILY_CAP` (default **85**) codes/day, and OTP always
+  leaves **>15** of Gmail's daily quota free — your message notifications can never be
+  starved. When the cap is hit, the popup says verification is delayed and lets the
+  visitor send without it.
+- **Typo-catch:** an always-on, client-only hint under the email field ("Did you mean
+  **gmail.com**?") for common domain misspellings — no backend.
+- **Failure fallback:** if a send fails, the visitor gets an **Open-in-email-app**
+  button (pre-loads name/subject/message only — no metadata) and a **Copy message**
+  button.
+
+**Setup:** just re-paste `Code.gs` and redeploy a new version (adds `doGet` OTP
+handlers + the "Email verified" column). Optionally set the `OTP_DAILY_CAP` property.
+Clear the Sheet once so the new column header writes fresh. No new accounts or keys.
