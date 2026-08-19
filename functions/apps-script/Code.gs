@@ -92,13 +92,20 @@ function doPost(e) {
     try {
       var eh = otpHash(String(f.email).trim().toLowerCase());
       var vcache = CacheService.getScriptCache();
+      var codeWasSent = !!vcache.get('sent_' + eh);
       if (vcache.get('ver_' + eh)) {
         emailVerified = 'OTP-verified ✅';
         vcache.remove('ver_' + eh); // one-time — applies to this message
-      } else if (vcache.get('sent_' + eh) || m.otpStatus === 'sent-ignored') {
-        emailVerified = 'OTP sent, not verified ⚠️'; // a code was emailed but never confirmed
+      } else if (m.otpStatus === 'limit-exhausted') {
+        emailVerified = 'OTP limit reached, not verified ⚠️';   // used all 3 codes for the hour
+      } else if (m.otpStatus === 'too-many-attempts') {
+        emailVerified = 'Too many wrong attempts, not verified ⚠️';
+      } else if (codeWasSent || m.otpStatus === 'sent-ignored') {
+        // Floor: a code WAS emailed but never confirmed. `codeWasSent` is our own
+        // record, so this can't be downgraded by tampering with the client's status.
+        emailVerified = 'OTP sent, not verified ⚠️';
       } else if (m.otpStatus === 'attempted-failed') {
-        emailVerified = 'Verification unavailable ⚠️'; // the code couldn't be sent (service/quota)
+        emailVerified = 'Verification unavailable ⚠️';          // couldn't send a code (service/quota)
       }
     } catch (eV) { /* leave as Not verified */ }
 

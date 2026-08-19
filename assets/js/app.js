@@ -368,15 +368,32 @@
       setStatus("", "");
       // Offer optional email verification, then send with the resulting status.
       runOtpFlow(v).then(function (otpStatus) {
-        setStatus("Sending…", "");
         sendMessage(v, token, otpStatus);
       }, function () { submitBtn.disabled = false; }); // modal cancelled
     });
+
+    // While the message is in flight, cover the card with a loader and make the form
+    // inert so nothing behind it can be edited or re-submitted.
+    function enterSending() {
+      setStatus("", "");
+      form.setAttribute("inert", "");
+      var ld = el("div", "card-loader");
+      ld.setAttribute("role", "status");
+      ld.innerHTML = '<div class="modal-spinner" aria-hidden="true"></div><p>Sending your message…</p>';
+      card.appendChild(ld);
+      card._loader = ld;
+    }
+    function exitSending() {
+      form.removeAttribute("inert");
+      if (card._loader && card._loader.parentNode) card._loader.parentNode.removeChild(card._loader);
+      card._loader = null;
+    }
 
     // Deliver the message (Cloudflare relay path, else obfuscated fallback), tagging
     // the meta with the OTP status ('verified' | 'attempted-failed' | 'not-attempted').
     // Note: 'verified' is only *advisory* here — Apps Script confirms it server-side.
     function sendMessage(v, token, otpStatus) {
+      enterSending();
       var fields = { name: v.name, email: v.email, subject: v.subject, org: v.org, message: v.message };
       var onGithub = /(^|\.)github\.io$/i.test(location.hostname);
       function withOtp(meta) { meta.otpStatus = otpStatus; return meta; }
@@ -403,12 +420,14 @@
         }).then(function () { return true; });
       }
       function onError() {
+        exitSending();
         submitBtn.disabled = false;
         if (window.turnstile && widgetId != null) { try { window.turnstile.reset(widgetId); } catch (e) {} }
         showFailure(v);
       }
-      cloudflarePath().then(function () { showSent(v); }, function () {
-        fallbackPath().then(function () { showSent(v); }, onError);
+      function onSent() { exitSending(); showSent(v); }
+      cloudflarePath().then(onSent, function () {
+        fallbackPath().then(onSent, onError);
       });
     }
 
@@ -530,7 +549,7 @@
           jsonp(endpoint, { action: "send-otp", email: v.email }).then(function (r) {
             if (r && r.sent) renderEnter("", "", (typeof r.remaining === "number" ? r.remaining : null));
             else if (r && r.reason === "quota") renderUnavailable("We’re experiencing verification delays right now. Please go ahead and send without verification.", "attempted-failed");
-            else if (r && r.reason === "rate-limit") renderUnavailable("You’ve used all 3 codes for this email" + (r.retryMins ? " — try again in about " + r.retryMins + " min" : "") + ". Please send without verification, or try again later.", "attempted-failed");
+            else if (r && r.reason === "rate-limit") renderUnavailable("You’ve used all 3 codes for this email" + (r.retryMins ? " — try again in about " + r.retryMins + " min" : "") + ". Please send without verification, or try again later.", "limit-exhausted");
             else if (r && r.reason === "bad-email") renderUnavailable("That email doesn’t look valid — please check it, or send without verification.", "attempted-failed");
             else renderUnavailable("Couldn’t send a code just now. Please go ahead and send without verification.", "attempted-failed");
           }, function () { renderUnavailable("Couldn’t reach the verification service. Please go ahead and send without verification.", "attempted-failed"); });
@@ -542,7 +561,7 @@
           jsonp(endpoint, { action: "verify-otp", email: v.email, code: code }).then(function (r) {
             if (r && r.verified) finish("verified");
             else if (r && r.reason === "expired") renderEnter("That code expired — tap Resend for a new one.", "warn");
-            else if (r && r.reason === "too-many") renderUnavailable("Too many incorrect attempts. Please send without verification, or try again later.", "sent-ignored");
+            else if (r && r.reason === "too-many") renderUnavailable("Too many incorrect attempts. Please send without verification, or try again later.", "too-many-attempts");
             else { var left = (r && typeof r.triesLeft === "number") ? " (" + r.triesLeft + " left)" : ""; setNote("Incorrect code" + left + ".", "warn"); }
           }, function () { setNote("Couldn’t verify just now — try again, or send without verification.", "warn"); });
         }
