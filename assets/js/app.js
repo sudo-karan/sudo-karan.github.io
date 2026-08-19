@@ -495,40 +495,45 @@
             '<p class="modal-sub">Emailing a 6-digit code to <strong>' + esc(v.email) + '</strong>.</p>' +
             '<div class="modal-spinner" aria-hidden="true"></div>');
         }
-        function renderUnavailable(msg) {
+        function renderUnavailable(msg, status) {
           h('<h3 id="otpHeading">Verification unavailable</h3>' +
             '<p class="modal-sub">' + esc(msg) + '</p>' +
             '<div class="modal-actions"><button type="button" class="btn primary" id="otpAnyway">Send without verifying</button></div>');
-          document.getElementById("otpAnyway").onclick = function () { finish("attempted-failed"); };
+          document.getElementById("otpAnyway").onclick = function () { finish(status || "attempted-failed"); };
           focusFirst();
         }
-        function renderEnter(note, noteKind) {
+        function renderEnter(note, noteKind, remaining) {
+          var noMore = (typeof remaining === "number" && remaining <= 0);
+          var resendTxt = "Resend" + (typeof remaining === "number" ? " · " + remaining + " left" : "");
+          var defaultNote = noMore ? "That’s all 3 codes for this email — no more for about an hour." : "";
           h('<h3 id="otpHeading">Enter the code</h3>' +
             '<p class="modal-sub">We emailed a 6-digit code to <strong>' + esc(v.email) + '</strong>. It expires in 10 minutes.</p>' +
             '<input class="otp-input" id="otpCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" aria-label="6-digit code" />' +
-            '<p class="otp-note' + (noteKind ? " " + noteKind : "") + '" id="otpNote">' + (note ? esc(note) : "") + '</p>' +
+            '<p class="otp-note' + (noteKind ? " " + noteKind : (noMore ? " warn" : "")) + '" id="otpNote">' + esc(note || defaultNote) + '</p>' +
             '<div class="modal-actions">' +
             '<button type="button" class="btn primary" id="otpCheck">Verify &amp; send</button>' +
-            '<button type="button" class="btn ghost" id="otpResend">Resend</button>' +
+            '<button type="button" class="btn ghost" id="otpResend"' + (noMore ? " disabled" : "") + '>' + esc(resendTxt) + '</button>' +
             '<button type="button" class="btn ghost" id="otpSkip2">Send without verifying</button>' +
             '</div>');
           var inp = document.getElementById("otpCode");
           inp.addEventListener("input", function () { inp.value = inp.value.replace(/\D/g, "").slice(0, 6); });
           inp.addEventListener("keydown", function (ev) { if (ev.key === "Enter") { ev.preventDefault(); doVerify(); } });
           document.getElementById("otpCheck").onclick = doVerify;
-          document.getElementById("otpResend").onclick = startSend;
-          document.getElementById("otpSkip2").onclick = function () { finish("attempted-failed"); };
+          var rb = document.getElementById("otpResend");
+          if (rb && !noMore) rb.onclick = startSend;
+          // Code was already emailed, so skipping now is "sent, not confirmed" (server also enforces this).
+          document.getElementById("otpSkip2").onclick = function () { finish("sent-ignored"); };
           inp.focus();
         }
         function startSend() {
           renderSending();
           jsonp(endpoint, { action: "send-otp", email: v.email }).then(function (r) {
-            if (r && r.sent) renderEnter("", "");
-            else if (r && r.reason === "quota") renderUnavailable("We’re experiencing verification delays right now. Please go ahead and send without verification.");
-            else if (r && r.reason === "rate-limit") renderUnavailable("Too many code requests for this email. Please send without verification, or try again in a bit.");
-            else if (r && r.reason === "bad-email") renderUnavailable("That email doesn’t look valid — please check it, or send without verification.");
-            else renderUnavailable("Couldn’t send a code just now. Please go ahead and send without verification.");
-          }, function () { renderUnavailable("Couldn’t reach the verification service. Please go ahead and send without verification."); });
+            if (r && r.sent) renderEnter("", "", (typeof r.remaining === "number" ? r.remaining : null));
+            else if (r && r.reason === "quota") renderUnavailable("We’re experiencing verification delays right now. Please go ahead and send without verification.", "attempted-failed");
+            else if (r && r.reason === "rate-limit") renderUnavailable("You’ve used all 3 codes for this email" + (r.retryMins ? " — try again in about " + r.retryMins + " min" : "") + ". Please send without verification, or try again later.", "attempted-failed");
+            else if (r && r.reason === "bad-email") renderUnavailable("That email doesn’t look valid — please check it, or send without verification.", "attempted-failed");
+            else renderUnavailable("Couldn’t send a code just now. Please go ahead and send without verification.", "attempted-failed");
+          }, function () { renderUnavailable("Couldn’t reach the verification service. Please go ahead and send without verification.", "attempted-failed"); });
         }
         function doVerify() {
           var inp = document.getElementById("otpCode"), code = inp ? inp.value.trim() : "";
@@ -537,7 +542,7 @@
           jsonp(endpoint, { action: "verify-otp", email: v.email, code: code }).then(function (r) {
             if (r && r.verified) finish("verified");
             else if (r && r.reason === "expired") renderEnter("That code expired — tap Resend for a new one.", "warn");
-            else if (r && r.reason === "too-many") renderUnavailable("Too many incorrect attempts. Please send without verification, or try again later.");
+            else if (r && r.reason === "too-many") renderUnavailable("Too many incorrect attempts. Please send without verification, or try again later.", "sent-ignored");
             else { var left = (r && typeof r.triesLeft === "number") ? " (" + r.triesLeft + " left)" : ""; setNote("Incorrect code" + left + ".", "warn"); }
           }, function () { setNote("Couldn’t verify just now — try again, or send without verification.", "warn"); });
         }

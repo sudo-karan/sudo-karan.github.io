@@ -84,16 +84,21 @@ function doPost(e) {
 
     if (!f.name || !f.email || !f.subject || !f.message) return out({ ok: false, error: 'missing-fields' });
 
-    // --- Email-verified status (server-authoritative: only trust our own cache) ---
+    // --- Email-verified status (server-authoritative: we trust our OWN cache, not
+    // the browser's claim). 'sent_' marks that a code was actually emailed to this
+    // address, so "code sent but never confirmed" is detected here and can't be
+    // hidden by skipping the prompt or tampering with the payload. ---
     var emailVerified = 'Not verified';
     try {
-      var vkey = 'ver_' + otpHash(String(f.email).trim().toLowerCase());
-      var cache = CacheService.getScriptCache();
-      if (cache.get(vkey)) {
+      var eh = otpHash(String(f.email).trim().toLowerCase());
+      var vcache = CacheService.getScriptCache();
+      if (vcache.get('ver_' + eh)) {
         emailVerified = 'OTP-verified ✅';
-        cache.remove(vkey); // one-time — a verified email applies to this one message
+        vcache.remove('ver_' + eh); // one-time — applies to this message
+      } else if (vcache.get('sent_' + eh) || m.otpStatus === 'sent-ignored') {
+        emailVerified = 'OTP sent, not verified ⚠️'; // a code was emailed but never confirmed
       } else if (m.otpStatus === 'attempted-failed') {
-        emailVerified = 'Attempted — unavailable ⚠️';
+        emailVerified = 'Verification unavailable ⚠️'; // the code couldn't be sent (service/quota)
       }
     } catch (eV) { /* leave as Not verified */ }
 
@@ -211,8 +216,15 @@ function sendOtp(email) {
   if (!validEmail(email)) return { sent: false, reason: 'bad-email' };
   var cache = CacheService.getScriptCache();
   var h = otpHash(email);
-  var rl = parseInt(cache.get('rl_' + h) || '0', 10);
-  if (rl >= 3) return { sent: false, reason: 'rate-limit' }; // max 3 codes / email / hour
+  // Fixed 1-hour window per email, max 3 codes (1 initial + 2 resends).
+  var now = Date.now();
+  var rl;
+  try { rl = JSON.parse(cache.get('rl_' + h) || 'null'); } catch (e) { rl = null; }
+  if (!rl || (now - rl.first) >= 3600000) rl = { count: 0, first: now };
+  var elapsed = now - rl.first;
+  if (rl.count >= 3) {
+    return { sent: false, reason: 'rate-limit', retryMins: Math.max(1, Math.ceil((3600000 - elapsed) / 60000)) };
+  }
   if (!otpReserve()) return { sent: false, reason: 'quota' };
   var code = String(Math.floor(100000 + Math.random() * 900000));
   var body = 'Your karan98.in verification code is:\n\n    ' + code +
@@ -222,9 +234,12 @@ function sendOtp(email) {
   } catch (err) {
     return { sent: false, reason: 'send-failed' };
   }
+  rl.count += 1;
+  var ttl = Math.max(60, Math.ceil((3600000 - elapsed) / 1000)); // expire at the 1-hour edge
+  cache.put('rl_' + h, JSON.stringify(rl), ttl);
+  cache.put('sent_' + h, '1', ttl);                              // "a code was delivered here"
   cache.put('code_' + h, JSON.stringify({ code: code, tries: 0 }), 600); // 10 min
-  cache.put('rl_' + h, String(rl + 1), 3600); // 1 hour window
-  return { sent: true };
+  return { sent: true, remaining: 3 - rl.count }; // codes left after this one (2, then 1, then 0)
 }
 
 function verifyOtp(email, code) {
@@ -240,6 +255,7 @@ function verifyOtp(email, code) {
   if (rec.tries > 5) { cache.remove('code_' + h); return { verified: false, reason: 'too-many' }; }
   if (code && code === rec.code) {
     cache.remove('code_' + h);
+    cache.remove('sent_' + h);       // verified supersedes the "code delivered" flag
     cache.put('ver_' + h, '1', 900); // verified for 15 min — long enough to submit
     return { verified: true };
   }

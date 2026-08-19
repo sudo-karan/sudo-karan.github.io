@@ -117,11 +117,19 @@ asks whether to verify their email via a 6-digit code (or send without). It reus
 **your Gmail** (no new service) via JSONP calls to the Apps Script `/exec`:
 
 - **Send/verify:** `doGet(action=send-otp|verify-otp)` — a code is emailed, held for
-  10 min in `CacheService`, max 5 tries, max 3 codes per email per hour.
-- **Server-authoritative badge:** on success Apps Script records the verified email
-  in its own cache; `doPost` reads that and stamps the Sheet/email **"Email verified"**
-  column as `OTP-verified ✅`, `Attempted — unavailable ⚠️`, or `Not verified`. The
-  badge is decided server-side, so it can't be faked from the page.
+  10 min in `CacheService`, max 5 tries. Up to **3 codes per email per hour** (1 send
+  + 2 resends); the popup shows a live "N left" counter, then a ~1-hour cooldown
+  message with the remaining minutes.
+- **Server-authoritative badge:** Apps Script records both that a code was *emailed*
+  to an address (`sent_`) and that one was *confirmed* (`ver_`). `doPost` reads its
+  own cache — never the browser's claim — and stamps the **"Email verified"** column:
+  - `OTP-verified ✅` — code confirmed.
+  - `OTP sent, not verified ⚠️` — a code **was emailed but never confirmed** (the
+    sender skipped it or entered it wrong). **This is enforced server-side**, so a
+    malicious sender can't hide it by skipping the prompt or editing the payload.
+  - `Verification unavailable ⚠️` — the code couldn't be sent (quota/outage), not the
+    sender's fault.
+  - `Not verified` — the sender chose not to verify.
 - **Daily cap:** at most `OTP_DAILY_CAP` (default **85**) codes/day, and OTP always
   leaves **>15** of Gmail's daily quota free — your message notifications can never be
   starved. When the cap is hit, the popup says verification is delayed and lets the
