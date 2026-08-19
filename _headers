@@ -1,0 +1,12 @@
+# Cloudflare Pages headers.
+# Always revalidate the HTML and app assets so a new deploy is picked up on the next
+# load (no stale JS/CSS). ETag/Last-Modified still let unchanged files return a cheap
+# 304, so this costs a conditional request, not a full re-download.
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+/assets/js/*
+  Cache-Control: no-cache
+/assets/css/*
+  Cache-Control: no-cache
