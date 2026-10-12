@@ -1,29 +1,52 @@
 /* ============================================================================
    Cloudflare Pages middleware — runs for EVERY request to karan98.in.
 
-   The portfolio (this repo) and its Functions (/api/*) answer their own routes.
-   Anything this site doesn't have — a GitHub Pages project folder such as
-   /ICTD_Project — is transparently mirrored from sudo-karan.github.io, so
-   karan98.in/ICTD_Project serves that project with the URL left on karan98.in.
-   Any project you publish to sudo-karan.github.io/<name> works automatically;
+   This repo (the portfolio) is a single-page site. It owns "/", "/assets/*",
+   "/api/*" and "/.well-known/*". GitHub Pages (sudo-karan.github.io) hosts the
+   same site AND the separate project folders such as /ICTD_Project. The goal:
+   every project at sudo-karan.github.io/<name> is reachable at karan98.in/<name>
+   with the URL left on karan98.in. Any project you publish works automatically;
    no per-project rule needed.
 
-   Safe by construction: it only reaches out when THIS site returns 404, the
-   mirror host is hard-coded (not an open proxy), and GitHub's trailing-slash
-   redirect is rewritten back to karan98.in so visitors never bounce to github.io.
+   Why we DON'T key off a local 404: Cloudflare Pages auto-detects this site as a
+   single-page app (index.html present, no explicit setting) and serves
+   index.html with a 200 for any unmatched path — so "/ICTD_Project" would render
+   the home page, never a 404, and a 404-triggered proxy would never fire.
+   Instead we answer the site's own paths locally and proxy everything else to
+   the mirror, falling back to the local response only when the mirror lacks it.
+
+   Safe by construction: the mirror host is hard-coded (not an open proxy), the
+   site's own high-traffic paths never leave Cloudflare, only GET/HEAD are
+   proxied (GitHub Pages serves static content only), and GitHub's trailing-slash
+   redirect is rewritten to a relative path so visitors never bounce to github.io.
    ========================================================================== */
 
 const MIRROR_HOST = "sudo-karan.github.io";
 
+// Paths THIS repo serves itself — always answered locally, never proxied.
+// (A project literally named "assets", "api" or ".well-known" would collide,
+// but none do; add new top-level site routes here if you ever create them.)
+function isOwnPath(pathname) {
+  return (
+    pathname === "/" ||
+    pathname === "/index.html" ||
+    pathname.startsWith("/assets/") ||
+    pathname.startsWith("/api/") ||
+    pathname.startsWith("/.well-known/")
+  );
+}
+
 export async function onRequest(context) {
   const { request, next } = context;
+  const url = new URL(request.url);
 
-  // Let the portfolio + /api/* handle their own routes first.
-  const res = await next();
-  if (res.status !== 404) return res; // found here → done; only 404s fall through
+  // The portfolio + its Functions own these routes.
+  if (isOwnPath(url.pathname)) return next();
 
-  // Not found on karan98.in → try the same path on GitHub Pages.
-  const reqUrl = new URL(request.url);
+  // GitHub Pages only serves static GET/HEAD; anything else stays on this site.
+  if (request.method !== "GET" && request.method !== "HEAD") return next();
+
+  // Everything else → try the same path on GitHub Pages (the mirror).
   const ghUrl = new URL(request.url);
   ghUrl.protocol = "https:";
   ghUrl.hostname = MIRROR_HOST;
@@ -34,18 +57,16 @@ export async function onRequest(context) {
   const fwdHeaders = new Headers(request.headers);
   fwdHeaders.delete("host");
   fwdHeaders.delete("cf-connecting-ip");
-  const init = { method: request.method, headers: fwdHeaders, redirect: "manual" };
-  if (request.method !== "GET" && request.method !== "HEAD") init.body = request.body;
 
   let gh;
   try {
-    gh = await fetch(ghUrl.toString(), init);
+    gh = await fetch(ghUrl.toString(), { method: request.method, headers: fwdHeaders, redirect: "manual" });
   } catch (e) {
-    return res; // mirror unreachable → keep our original 404
+    return next(); // mirror unreachable → let this site respond
   }
 
   // Keep the visitor on karan98.in: rewrite a same-host redirect (e.g. GitHub's
-  // 301 from /ICTD_Project to /ICTD_Project/) back to this origin.
+  // 301 from /ICTD_Project to /ICTD_Project/) back to a relative path.
   if (gh.status >= 300 && gh.status < 400) {
     const loc = gh.headers.get("Location");
     if (loc) {
@@ -59,7 +80,8 @@ export async function onRequest(context) {
     }
   }
 
-  // GitHub Pages doesn't have it either → return our real 404 (not GitHub's).
-  if (gh.status === 404) return res;
+  // Mirror doesn't have it either → fall back to this site's own response
+  // (its 404 page). Anything else from the mirror (200, real errors) → serve it.
+  if (gh.status === 404) return next();
   return gh;
 }
