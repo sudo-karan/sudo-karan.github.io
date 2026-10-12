@@ -25,15 +25,18 @@ const MIRROR_HOST = "sudo-karan.github.io";
 
 // Paths THIS repo serves itself — always answered locally, never proxied.
 // (A project literally named "assets", "api" or ".well-known" would collide,
-// but none do; add new top-level site routes here if you ever create them.)
+// but none do.)
 function isOwnPath(pathname) {
-  return (
-    pathname === "/" ||
-    pathname === "/index.html" ||
-    pathname.startsWith("/assets/") ||
-    pathname.startsWith("/api/") ||
-    pathname.startsWith("/.well-known/")
-  );
+  if (pathname === "/") return true;
+  if (pathname.startsWith("/assets/")) return true;
+  if (pathname.startsWith("/api/")) return true;
+  if (pathname.startsWith("/.well-known/")) return true;
+  // A top-level file — one path segment with an extension — is this repo's own
+  // static file: /index.html, /404.html, /robots.txt, /sitemap.xml,
+  // /favicon.ico, /site.webmanifest, etc. GitHub Pages projects are always
+  // subdirectories (/<project>/...), so they never match this and still proxy.
+  if (/^\/[^/]+\.[^/]+$/.test(pathname)) return true;
+  return false;
 }
 
 export async function onRequest(context) {
@@ -52,11 +55,19 @@ export async function onRequest(context) {
   ghUrl.hostname = MIRROR_HOST;
   ghUrl.port = "";
 
-  // Forward the request but drop the karan98.in Host so GitHub Pages routes by
-  // the target URL (sudo-karan.github.io), not the original host.
+  // Forward the request, but strip anything that shouldn't reach a different
+  // operator (GitHub): the Host (so Pages routes by the target host), the
+  // visitor's credentials (Cookie/Authorization — e.g. Cloudflare's own zone
+  // cookies), and all Cloudflare-internal cf-* headers (incl. cf-connecting-ip,
+  // which would leak the visitor IP). GitHub Pages is static and needs none of
+  // these; caching/content-negotiation headers (Accept, If-None-Match, …) stay.
   const fwdHeaders = new Headers(request.headers);
   fwdHeaders.delete("host");
-  fwdHeaders.delete("cf-connecting-ip");
+  fwdHeaders.delete("cookie");
+  fwdHeaders.delete("authorization");
+  for (const name of [...fwdHeaders.keys()]) {
+    if (name.toLowerCase().startsWith("cf-")) fwdHeaders.delete(name);
+  }
 
   let gh;
   try {
