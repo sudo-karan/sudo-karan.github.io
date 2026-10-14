@@ -6,7 +6,7 @@
 window.SITE = {
   profile: {
     name: "Jaskaran Singh",
-    role: "Assistant Director",
+    role: "Scientist-C / Deputy Director",
     org: "National Informatics Centre · MeitY",
     orgFull: "National Informatics Centre, Ministry of Electronics & IT — Government of India",
     location: "New Delhi, India",
@@ -14,16 +14,16 @@ window.SITE = {
     eyebrow: "Government technologist · New Delhi, India",
     // The three things that should land instantly. Rendered as bold hero badges.
     creds: [
-      "Assistant Director — NIC, MeitY",
-      "PhD candidate — IIT Delhi",
+      "Scientist-C / Deputy Director — NIC, MeitY",
+      "Part-time PhD Scholar — IIT Delhi",
       "ex-McKinsey Data Scientist",
     ],
     // Hero headline — serif. Kept short so it never overlaps.
     tagline: "Building India’s Open Government Data platform.",
     lede:
-      "I work at the intersection of government, data and emerging technology. At the National Informatics Centre I lead the team building and scaling the national Open Government Data platform (data.gov.in) — unlocking high-value datasets that drive transparency and innovation across ministries, states and industry.",
+      "I’m a technology leader at the National Informatics Centre, where I head the team behind data.gov.in — India’s national Open Government Data platform — working with government departments, states, academia and industry to design, build and scale it.",
     lede2:
-      "I'm also a doctoral researcher (PhD) at IIT Delhi, and was previously a Data Scientist at McKinsey & Company. I care about turning data engineering, analytics and AI/ML into governance that reaches citizens — and I still ship code.",
+      "I’m also a part-time PhD scholar at IIT Delhi, researching satellite-based forest biodiversity monitoring, and was previously a Data Scientist at McKinsey & Company. I care about turning data engineering, analytics and AI/ML into governance that reaches citizens — and I still ship code.",
   },
 
   contact: {
@@ -54,6 +54,7 @@ window.SITE = {
     { id: "about", label: "About" },
     { id: "work", label: "Work" },
     { id: "experience", label: "Experience" },
+    { id: "research", label: "Research" },
     { id: "contact", label: "Contact" },
   ],
 
@@ -61,17 +62,17 @@ window.SITE = {
   building: {
     badge: "In progress",
     kicker: "Currently building",
-    name: "A RAG chatbot for data.gov.in",
+    name: "An offline question-answering assistant for data.gov.in",
     blurb:
-      "A fully offline, retrieval-augmented chatbot for data.gov.in — India’s Open Government Data platform. Every part runs locally: LLM inference via Ollama, embeddings via sentence-transformers, and a persisted ChromaDB vector store — no external API calls at runtime. It answers strictly from official data.gov.in policy documents and auto-adapts to its host, from a laptop to a 32-core workstation to a GPU cloud VM.",
+      "A retrieval-augmented chatbot for data.gov.in — India’s Open Government Data platform — that runs fully on a laptop: Ollama for the LLM, sentence-transformers for embeddings, ChromaDB as the vector store and FastAPI with streaming. A moderation gate and an intent classifier route each query to document search, live-data lookup or request filing; answers are grounded in retrieved sources, and out-of-scope questions are declined.",
     highlights: [
-      "100% offline / air-gapped",
-      "Local LLM via Ollama",
-      "RAG over official OGD policy docs",
-      "REST API + SSE streaming + Docker",
-      "Hardware-adaptive runtime",
+      "Runs fully offline — on a laptop",
+      "Moderation gate + intent classifier",
+      "Routes to doc search, live data or request filing",
+      "Grounded answers; declines out-of-scope",
+      "FastAPI with streaming",
     ],
-    tech: ["Python", "Ollama", "ChromaDB", "sentence-transformers", "REST / SSE"],
+    tech: ["Python", "Ollama", "sentence-transformers", "ChromaDB", "FastAPI"],
     code: "https://github.com/sudo-karan/rag_chatbot",
   },
 
@@ -86,60 +87,117 @@ window.SITE = {
   pillars: [
     "Open Government Data — data.gov.in",
     "AI / ML & Data Engineering",
-    "PhD candidate · IIT Delhi",
+    "Part-time PhD · IIT Delhi",
     "ex-McKinsey Data Scientist",
   ],
 
+  // Timeline entries (experience / internships / leadership) are org-first, like
+  // the résumé: an org heading, a role progression (newest first — a role may
+  // carry its own bullets), an optional italic summary, shared bullets and tags.
   experience: [
     {
-      role: "Assistant Director",
-      org: "National Informatics Centre · MeitY",
+      org: "National Informatics Centre",
+      orgNote: "MeitY, Government of India",
       period: "Mar 2022 — Present",
       location: "New Delhi",
       current: true,
-      summary: "Heading the team behind India’s national Open Government Data platform.",
-      bullets: [
-        "Design, build and scale data.gov.in — publishing high-value public datasets across ministries, states and organisations at national scale.",
-        "Lead scalable data pipelines, cloud-native architecture, REST APIs and search (Elasticsearch, Drupal).",
-        "Partner with researchers, civic-tech and industry to apply open data to AI/ML; mentor state partners on modern engineering and publishing standards.",
+      roles: [
+        { title: "Scientist-C / Deputy Director", period: "Aug 2026 — Present" },
+        { title: "Scientist-B / Assistant Director", period: "Mar 2022 — Aug 2026" },
       ],
-      tags: ["e-Governance", "Data Platforms", "AI/ML", "Leadership"],
+      summary: "Bharat Data Platform — data.gov.in, the Open Government Data Platform of India.",
+      bullets: [
+        "Head a multidisciplinary team that designs, builds and scales the platform; mentor the team and state partners on modern technologies, coding practice and data-publishing standards.",
+        "Designing the next-generation platform: microservice decomposition, DCAT-3 metadata, an Apache APISIX API gateway, and disaster-recovery and backup planning.",
+        "Build Apache Airflow pipelines on Kubernetes, including scheme feeds such as Jal Jeevan Mission and a monthly, checkpoint-resumable metadata-enrichment job — designed for lakhs of resources — that flags changed records for search re-indexing.",
+        "Catalog and API clean-up programme (a unified Elasticsearch index and endpoints for the PMU): built a snapshot-diff tool that tracks each catalog’s state (linked, orphaned, absent) across database snapshots.",
+        "Work on platform services: the visualisation API (PHP, MySQL), a FastAPI PII-detection service, the Feedback Management System, and the Elasticsearch cluster.",
+      ],
+      tags: ["Open Data", "Kubernetes", "Apache Airflow", "Elasticsearch", "Leadership"],
     },
     {
-      role: "Data Scientist — Operations Digital Assets",
       org: "McKinsey & Company",
+      orgNote: "Operations Digital Assets team",
       period: "Jan 2021 — Mar 2022",
       location: "Gurugram",
-      summary: "Document-AI and internal tooling for the firm’s operations practice.",
-      bullets: [
-        "Built a system that ingests any document type and extracts structured information for analytics — a Layout Extraction Algorithm that improved the firm’s knowledge-extraction tools.",
-        "Developed and deployed pipelines and tools that cut engagement time, accessible across the firm.",
-        "End-to-end data science: extraction, cleaning, processing, modelling and deployment.",
+      roles: [
+        {
+          title: "Data Scientist", period: "Jul 2021 — Mar 2022",
+          bullets: [
+            "Developed pipelines for internal tools aimed at reducing the time client engagements take, and was responsible for developing and deploying tools for firm-wide access.",
+            "Worked on data extraction, cleaning and processing, and on developing and deploying models, across client engagements.",
+          ],
+        },
+        {
+          title: "Intern", period: "Jan 2021 — Jul 2021",
+          bullets: [
+            "Built a system that takes documents of any type and extracts structured information for analytics; implemented a layout-extraction algorithm that improved the firm’s knowledge-extraction tools, and developed a working prototype for demonstration.",
+          ],
+        },
       ],
-      tags: ["Document AI", "Data Engineering", "ML"],
-    },
-    {
-      role: "Data Science Intern",
-      org: "Sabudh Foundation",
-      period: "Jul 2020 — Dec 2020",
-      location: "Mohali",
-      summary: "Applied machine-learning research with a social-impact mandate.",
-      bullets: ["Hands-on data-science research and applied ML projects under mentorship."],
-      tags: ["Machine Learning", "Research"],
-    },
-    {
-      role: "Systems Engineer (Intern)",
-      org: "Infosys",
-      period: "Jan 2019 — May 2019",
-      location: "Mysore",
-      summary: "Built secure communications infrastructure from first principles.",
-      bullets: [
-        "Built a mail server from scratch, secured with hashing, salting and 256-bit AES encryption, with QR-based admin access.",
-        "First team to combine two independent projects by sharing our API — recognised by mentors.",
-      ],
-      tags: ["Systems", "Security", "APIs"],
+      tags: ["Document AI", "Data Pipelines", "ML"],
     },
   ],
+
+  internships: [
+    {
+      org: "Sabudh Foundation",
+      period: "Jul 2020 — Dec 2020",
+      location: "SAS Nagar, Punjab",
+      roles: [{ title: "Data Science Intern" }],
+    },
+    {
+      org: "TheSmartBridge",
+      orgNote: "SmartInternz",
+      period: "Apr 2020 — May 2020",
+      location: "Patiala · remote",
+      roles: [{ title: "Internship project" }],
+      bullets: ["Developed an intelligent customer help desk with smart document understanding."],
+    },
+    {
+      org: "Infosys",
+      period: "Jan 2019 — May 2019",
+      location: "Mysuru",
+      roles: [{ title: "Systems Engineer Intern" }],
+      bullets: [
+        "Built an email server from scratch, secured with salted hashing and AES-256 encryption, with QR-code access to details for administrators; shared its API with a peer team’s movie-ticketing project — the first team to combine two projects, which was recognised by mentors.",
+      ],
+    },
+  ],
+
+  leadership: [
+    {
+      org: "CDGC — Training & Placement Cell",
+      orgNote: "PEC Chandigarh",
+      period: "Jan 2020 — Jul 2021",
+      location: "Chandigarh",
+      roles: [
+        { title: "Joint Head (M.Tech)", period: "Aug 2020 — Jul 2021" },
+        { title: "Training Class Representative (M.Tech)", period: "Jan 2020 — Aug 2020" },
+      ],
+      bullets: [
+        "Coordinated between students, faculty and the placement cell on recruitment and industry engagement; helped organise placement drives, internships and corporate outreach, and represented the M.Tech cohort in policy discussions.",
+      ],
+    },
+  ],
+
+  // Doctoral research — its own section.
+  research: {
+    title: "PhD, Computer Science",
+    school: "IIT Delhi",
+    mode: "Part-time",
+    period: "Aug 2025 — Present",
+    area: "Forest biodiversity monitoring from satellite data",
+    thesis: "A Computational Framework for Forest Biodiversity Monitoring and Modeling",
+    supervisor: "Prof. Aaditeshwar Seth",
+    threads: [
+      { title: "Forest stand delineation", text: "Built an unsupervised multi-sensor pipeline in Google Earth Engine (Sentinel-2 phenology, Sentinel-1 SAR, canopy height, terrain) using SNIC superpixels and k-means; tested at Sanjay Van (Delhi) and Mudumalai Tiger Reserve." },
+      { title: "Foundation-model embeddings", text: "Extended the pipeline to cluster on AlphaEarth Foundations embeddings (Google DeepMind) as an alternative to hand-crafted features; a comparison of the two is planned." },
+      { title: "Forest condition for rural planning", text: "Collaborating with the Foundation for Ecological Security on a forest-condition decision layer for rural-employment planning under VB-G RAM G; pilot scope Odisha and Rajasthan." },
+    ],
+    tags: ["Google Earth Engine", "Sentinel-1 / 2", "Remote sensing", "Clustering"],
+    code: "https://github.com/sudo-karan/phd-code",
+  },
 
   // Project filter categories
   categories: ["All", "Web & PWA", "Android", "AI / ML & Research", "Systems"],
@@ -160,8 +218,8 @@ window.SITE = {
     {
       name: "fmu — Forest Management Units", category: "AI / ML & Research", badge: "Doctoral research",
       code: "https://github.com/sudo-karan/phd-code", featured: true,
-      blurb: "A multi-sensor geospatial-ML pipeline on Google Earth Engine that delineates forest stands from open satellite data — fusing Sentinel-2 optical and Sentinel-1 radar with canopy height and terrain. An 11-stage runtime, fully implemented.",
-      tech: ["Google Earth Engine", "Python", "Sentinel-1/2"],
+      blurb: "An unsupervised, multi-sensor pipeline on Google Earth Engine that delineates forest stands from open satellite data — Sentinel-2 phenology, Sentinel-1 SAR, canopy height and terrain, segmented with SNIC superpixels and k-means. Tested at Sanjay Van (Delhi) and Mudumalai Tiger Reserve, and extended to Google DeepMind’s AlphaEarth Foundations embeddings.",
+      tech: ["Google Earth Engine", "Sentinel-1/2", "SNIC + k-means", "Python"],
     },
     {
       name: "Family FD Tracker", category: "Web & PWA", badge: "Live", live: "https://sudo-karan.github.io/family-dashboard/",
@@ -182,9 +240,9 @@ window.SITE = {
       tech: ["Kotlin", "Room", "Widgets"],
     },
     {
-      name: "Breast Cancer Detection", category: "AI / ML & Research", badge: "Research",
+      name: "Breast Cancer Detection", category: "AI / ML & Research", badge: "Research · 2020",
       code: "https://github.com/sudo-karan",
-      blurb: "A CNN detecting breast cancer from mammography images, paired with a GAN that synthesises samples to augment the dataset and push model accuracy.",
+      blurb: "A convolutional neural network classifier for mammograms with tuned hyper-parameters, paired with a GAN trained to generate synthetic mammograms that augment the original dataset.",
       tech: ["CNN", "GAN", "TensorFlow"],
     },
     {
@@ -214,26 +272,29 @@ window.SITE = {
   ],
 
   skills: [
-    { group: "Languages", items: ["Python", "Java", "Kotlin", "TypeScript / JS", "C", "CUDA", "SQL"] },
-    { group: "AI · ML & NLP", items: ["Machine Learning", "Deep Learning", "NLP", "TensorFlow", "scikit-learn", "Geospatial ML"] },
-    { group: "Platforms & Cloud", items: ["Cloud-native", "REST APIs", "Microservices", "Elasticsearch", "Drupal", "Azure", "Google Earth Engine"] },
-    { group: "Web & Mobile", items: ["React", "Vite", "PWAs", "Jetpack Compose", "Supabase", "Offline-first"] },
-    { group: "Data & Leadership", items: ["Data Engineering", "Team Leadership", "Program Management", "Capacity Building", "Mentoring"] },
+    { group: "Data & Backend", items: ["Python", "SQL", "Apache Airflow", "Elasticsearch", "MySQL", "FastAPI", "Drupal", "PHP"] },
+    { group: "Platforms & APIs", items: ["Kubernetes", "Apache APISIX", "REST APIs", "DCAT", "Microservices", "Git", "Azure"] },
+    { group: "AI / ML", items: ["Machine Learning", "CNNs & GANs", "LLMs & RAG", "Clustering", "NLP", "TensorFlow", "scikit-learn"] },
+    { group: "Geospatial", items: ["Google Earth Engine", "Sentinel-1 / 2", "Remote Sensing"] },
+    { group: "Web, Mobile & Systems", items: ["TypeScript / JS", "React", "PWAs", "Supabase", "Kotlin", "Jetpack Compose", "Java", "C", "CUDA"] },
+    { group: "Leadership", items: ["Team Leadership", "Capacity Building", "Stakeholder Engagement", "Mentoring", "Program Management"] },
   ],
 
+  interests: ["AI / ML", "NLP", "Geospatial analytics", "Open data", "Microservices", "Data security", "IoT"],
+
   education: [
-    { degree: "Doctoral Research (PhD), Computer Science", school: "Indian Institute of Technology (IIT) Delhi", period: "2025 — Present", note: "Ongoing" },
-    { degree: "M.Tech, Computer Science & Engineering", school: "Punjab Engineering College, Chandigarh", period: "2019 — 2021", note: "9.60 CGPA" },
-    { degree: "B.Tech, Computer Science & Engineering", school: "Punjabi University, Patiala", period: "2015 — 2019", note: "8.21 CGPA" },
+    { degree: "PhD, Computer Science (part-time)", school: "Indian Institute of Technology Delhi", period: "Aug 2025 — Present", note: "Ongoing" },
+    { degree: "M.Tech, Computer Science & Engineering", school: "Punjab Engineering College, Chandigarh", period: "2019 — 2021", note: "CGPA 9.60 / 10" },
+    { degree: "B.Tech, Computer Science & Engineering", school: "Punjabi University, Patiala", period: "2015 — 2019", note: "CGPA 8.21 / 10" },
   ],
 
   certifications: [
-    "Microsoft Certified: Azure Data Fundamentals",
-    "Machine Learning with Python — Level 1",
-    "Using Databases with Python",
-    "Capstone: Data with Python (with Honors)",
-    "Cloud Core",
+    { name: "Microsoft Certified: Azure Data Fundamentals", issuer: "Microsoft" },
+    { name: "Machine Learning with Python — Level 1", issuer: "IBM" },
+    { name: "Cloud Core", issuer: "IBM" },
+    { name: "Capstone: Retrieving, Processing, and Visualizing Data with Python (with Honors)", issuer: "University of Michigan · Coursera" },
+    { name: "Using Databases with Python", issuer: "University of Michigan · Coursera" },
   ],
 
-  languages: ["Punjabi — native", "Hindi — professional", "English — professional"],
+  languages: ["Punjabi — native", "Hindi — native", "English — professional working"],
 };

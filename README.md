@@ -1,7 +1,7 @@
 # sudo-karan.github.io
 
-Personal portfolio / résumé site for **Jaskaran Singh** — Assistant Director,
-National Informatics Centre (NIC · MeitY), Government of India.
+Personal portfolio / résumé site for **Jaskaran Singh** — Scientist-C / Deputy
+Director, National Informatics Centre (NIC · MeitY), Government of India.
 
 Live at **https://karan98.in**
 
