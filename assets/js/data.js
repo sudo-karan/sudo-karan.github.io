@@ -6,7 +6,7 @@
 window.SITE = {
   profile: {
     name: "Jaskaran Singh",
-    role: "Scientist-C / Deputy Director",
+    role: "Deputy Director",
     org: "National Informatics Centre · MeitY",
     orgFull: "National Informatics Centre, Ministry of Electronics & IT — Government of India",
     location: "New Delhi, India",
@@ -14,14 +14,14 @@ window.SITE = {
     eyebrow: "Government technologist · New Delhi, India",
     // The three things that should land instantly. Rendered as bold hero badges.
     creds: [
-      "Scientist-C / Deputy Director — NIC, MeitY",
+      "Deputy Director — NIC, MeitY",
       "Part-time PhD Scholar — IIT Delhi",
       "ex-McKinsey Data Scientist",
     ],
     // Hero headline — serif. Kept short so it never overlaps.
     tagline: "Building India’s Open Government Data platform.",
     lede:
-      "I’m a technology leader at the National Informatics Centre, where I head the team behind data.gov.in — India’s national Open Government Data platform — working with government departments, states, academia and industry to design, build and scale it.",
+      "I’m a technology leader at the National Informatics Centre, working on data.gov.in — India’s national Open Government Data platform — with government departments, states, academia and industry. I head a multidisciplinary team that designs, builds and scales the platform.",
     lede2:
       "I’m also a part-time PhD scholar at IIT Delhi, researching satellite-based forest biodiversity monitoring, and was previously a Data Scientist at McKinsey & Company. I care about turning data engineering, analytics and AI/ML into governance that reaches citizens — and I still ship code.",
   },
@@ -61,7 +61,7 @@ window.SITE = {
   // "Building now" — the in-progress flagship, featured boldly near the top.
   building: {
     badge: "In progress",
-    kicker: "Currently building",
+    kicker: "Personal project · currently building",
     name: "An offline question-answering assistant for data.gov.in",
     blurb:
       "A retrieval-augmented chatbot for data.gov.in — India’s Open Government Data platform — that runs fully on a laptop: Ollama for the LLM, sentence-transformers for embeddings, ChromaDB as the vector store and FastAPI with streaming. A moderation gate and an intent classifier route each query to document search, live-data lookup or request filing; answers are grounded in retrieved sources, and out-of-scope questions are declined.",
@@ -102,8 +102,8 @@ window.SITE = {
       location: "New Delhi",
       current: true,
       roles: [
-        { title: "Scientist-C / Deputy Director", period: "Aug 2026 — Present" },
-        { title: "Scientist-B / Assistant Director", period: "Mar 2022 — Aug 2026" },
+        { title: "Deputy Director", period: "Aug 2026 — Present" },
+        { title: "Assistant Director", period: "Mar 2022 — Aug 2026" },
       ],
       summary: "Bharat Data Platform — data.gov.in, the Open Government Data Platform of India.",
       bullets: [
