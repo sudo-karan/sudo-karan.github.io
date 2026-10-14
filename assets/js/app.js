@@ -107,20 +107,58 @@
     $("#allRepos").href = S.contact.github + "?tab=repositories";
   }
 
-  function renderExperience() {
-    var box = $("#exp");
-    S.experience.forEach(function (x) {
-      var bullets = x.bullets.map(function (b) { return "<li>" + esc(b) + "</li>"; }).join("");
+  function bulletList(list) {
+    return list && list.length ? "<ul>" + list.map(function (b) { return "<li>" + esc(b) + "</li>"; }).join("") + "</ul>" : "";
+  }
+
+  // Org-first timeline card (experience / internships / leadership): org heading,
+  // a role progression (each role may carry its own bullets), then an optional
+  // italic summary, shared bullets and tags.
+  function renderTimeline(list, sel) {
+    var box = $(sel); if (!box || !list) return;
+    list.forEach(function (x) {
+      var roles = (x.roles || []).map(function (r) {
+        return '<div class="role"><div class="role-head"><span class="rt">' + esc(r.title) + "</span>" +
+          (r.period ? '<span class="rp">' + esc(r.period) + "</span>" : "") + "</div>" + bulletList(r.bullets) + "</div>";
+      }).join("");
       var tags = (x.tags || []).map(function (t) { return '<span class="tag">' + esc(t) + "</span>"; }).join("");
       var item = el("div", "exp-item reveal");
       item.innerHTML =
         '<div class="exp-when"><div class="period">' + esc(x.period) + '</div><div class="loc">' + esc(x.location) + "</div>" +
         (x.current ? '<div class="now">CURRENT</div>' : "") + "</div>" +
-        '<div class="exp-body"><h3>' + esc(x.role) + '</h3><div class="org">' + esc(x.org) + "</div>" +
-        '<p class="esum">' + esc(x.summary) + "</p><ul>" + bullets + "</ul>" +
-        '<div class="exp-tags">' + tags + "</div></div>";
+        '<div class="exp-body"><h3>' + esc(x.org) + "</h3>" +
+        (x.orgNote ? '<div class="org">' + esc(x.orgNote) + "</div>" : "") +
+        (roles ? '<div class="roles">' + roles + "</div>" : "") +
+        (x.summary ? '<p class="esum">' + esc(x.summary) + "</p>" : "") +
+        bulletList(x.bullets) +
+        (tags ? '<div class="exp-tags">' + tags + "</div>" : "") + "</div>";
       box.appendChild(item);
     });
+  }
+
+  function renderExperience() {
+    renderTimeline(S.experience, "#exp");
+    renderTimeline(S.internships, "#intern");
+    renderTimeline(S.leadership, "#lead");
+  }
+
+  function renderResearch() {
+    var r = S.research, box = $("#researchCard"); if (!r || !box) return;
+    var threads = (r.threads || []).map(function (t) {
+      return "<li><strong>" + esc(t.title) + ".</strong> " + esc(t.text) + "</li>";
+    }).join("");
+    var tags = (r.tags || []).map(function (t) { return '<span class="tag">' + esc(t) + "</span>"; }).join("");
+    box.innerHTML =
+      '<div class="exp-when"><div class="period">' + esc(r.period) + '</div><div class="loc">' + esc(r.mode) + "</div>" +
+      '<div class="now">CURRENT</div></div>' +
+      '<div class="exp-body"><h3>' + esc(r.title) + " — " + esc(r.school) + "</h3>" +
+      '<div class="org">' + esc(r.area) + "</div>" +
+      '<p class="esum">Thesis (working title): ' + esc(r.thesis) + "</p>" +
+      '<p class="rmeta">Supervisor: ' + esc(r.supervisor) + "</p>" +
+      "<ul>" + threads + "</ul>" +
+      (tags ? '<div class="exp-tags">' + tags + "</div>" : "") +
+      (r.code ? '<div class="research-links"></div>' : "") + "</div>";
+    if (r.code) $(".research-links", box).appendChild(a(r.code, "btn", ICON.gh + " Research code", true));
   }
 
   function renderSkills() {
@@ -129,6 +167,11 @@
       var items = g.items.map(function (i) { return '<span class="it">' + esc(i) + "</span>"; }).join("");
       grid.appendChild(el("div", "skill-card reveal", "<h4>" + esc(g.group) + '</h4><div class="items">' + items + "</div>"));
     });
+    var ints = $("#interests");
+    if (ints && S.interests && S.interests.length) {
+      ints.innerHTML = '<span class="ilabel">Interests</span>' +
+        S.interests.map(function (i) { return '<span class="it">' + esc(i) + "</span>"; }).join("");
+    }
   }
 
   function renderCredentials() {
@@ -140,7 +183,11 @@
     });
     $("#langs").innerHTML = S.languages.map(function (l) { return esc(l); }).join("&nbsp; · &nbsp;");
     var cl = $("#certList");
-    S.certifications.forEach(function (c) { cl.appendChild(el("div", "cert-row", esc(c))); });
+    S.certifications.forEach(function (c) {
+      var name = typeof c === "string" ? c : c.name, issuer = typeof c === "string" ? "" : c.issuer;
+      cl.appendChild(el("div", "cert-row", "<div><div>" + esc(name) + "</div>" +
+        (issuer ? '<div class="iss">' + esc(issuer) + "</div>" : "") + "</div>"));
+    });
   }
 
   function renderContact() {
@@ -767,7 +814,7 @@
   function boot() {
     if (!S) return;
     renderNav(); renderHero(); renderBuilding(); renderAbout(); renderWork();
-    renderExperience(); renderSkills(); renderCredentials(); renderContact();
+    renderExperience(); renderResearch(); renderSkills(); renderCredentials(); renderContact();
     wireNav(); wireReveal(); wireContactForm();
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
