@@ -3,10 +3,13 @@
 
    This repo (the portfolio) is a single-page site. It owns "/", "/assets/*",
    "/api/*" and "/.well-known/*". GitHub Pages (sudo-karan.github.io) hosts the
-   same site AND the separate project folders such as /ICTD_Project. The goal:
-   every project at sudo-karan.github.io/<name> is reachable at karan98.in/<name>
-   with the URL left on karan98.in. Any project you publish works automatically;
-   no per-project rule needed.
+   same site AND separate project folders. The goal: every project at
+   sudo-karan.github.io/<name> is reachable at karan98.in/<name> with the URL left
+   on karan98.in. Any project you publish works automatically; no per-project rule
+   needed.
+
+   One exception: /ICTD_Project and everything under it redirect to
+   https://ictd.karan98.in, where the Odisha forest map sits behind its sign-in.
 
    Why we DON'T key off a local 404: Cloudflare Pages auto-detects this site as a
    single-page app (index.html present, no explicit setting) and serves
@@ -22,6 +25,16 @@
    ========================================================================== */
 
 const MIRROR_HOST = "sudo-karan.github.io";
+
+// The Odisha forest map has its own Pages project now. A 302, because browsers keep a 301
+// for good and this may still change.
+const MOVED_PATH = "/ICTD_Project";
+const MOVED_TO = "https://ictd.karan98.in";
+
+function movedTo(url) {
+  if (url.pathname !== MOVED_PATH && !url.pathname.startsWith(MOVED_PATH + "/")) return null;
+  return MOVED_TO + (url.pathname.slice(MOVED_PATH.length) || "/") + url.search;
+}
 
 // Paths THIS repo serves itself — always answered locally, never proxied.
 // (A project literally named "assets", "api" or ".well-known" would collide,
@@ -42,6 +55,9 @@ function isOwnPath(pathname) {
 export async function onRequest(context) {
   const { request, next } = context;
   const url = new URL(request.url);
+
+  const moved = movedTo(url);
+  if (moved) return Response.redirect(moved, 302);
 
   // The portfolio + its Functions own these routes.
   if (isOwnPath(url.pathname)) return next();
@@ -77,7 +93,7 @@ export async function onRequest(context) {
   }
 
   // Keep the visitor on karan98.in: rewrite a same-host redirect (e.g. GitHub's
-  // 301 from /ICTD_Project to /ICTD_Project/) back to a relative path.
+  // 301 from /<project> to /<project>/) back to a relative path.
   if (gh.status >= 300 && gh.status < 400) {
     const loc = gh.headers.get("Location");
     if (loc) {
