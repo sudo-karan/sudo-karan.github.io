@@ -34,6 +34,8 @@ every message to a **Google Sheet** and **emails** you.
 | RSA **public key** | `assets/js/data.js` (`contact.publicKey`) | yes (by design) |
 | RSA **private key** | Cloudflare Function env `PRIVATE_KEY` — the **only** env var it needs | **no** |
 | `OBFUSCATION_KEY` | `OBF_KEY` in `app.js`, the Function, and Apps Script property (same value) | yes-ish (obscurity) |
+| `ICTD_WHITELIST` | Apps Script property only (the Odisha forest map's sign-in, below) | **no** |
+| `ICTD_GATE_SECRET` | Apps Script property, and the map's Cloudflare env `ICTD_GATE_SECRET` (same value) | **no** |
 
 > The Function only reads **`PRIVATE_KEY`** now. The old `TURNSTILE_SECRET` /
 > `APPS_SCRIPT_URL` / `SHARED_SECRET` Cloudflare env vars are **unused** (harmless to
@@ -66,6 +68,10 @@ Cloudflare `PRIVATE_KEY` env var. To rotate it, generate a new pair (Web Crypto
    - `OTP_DAILY_CAP` — *(optional)* max verification codes emailed per day (default
      **85**); the rest of Gmail's ~100/day stays reserved for message notifications.
    - `SHEET_ID` — *(optional)* the Sheet id; omit to use the bound Sheet.
+   - `ICTD_WHITELIST` — the addresses allowed into the Odisha forest map, comma- or
+     newline-separated, compared lower-case. See the last section.
+   - `ICTD_GATE_SECRET` — a long random string; **must match** the map's Cloudflare
+     env `ICTD_GATE_SECRET`. See the last section.
 4. **Deploy → New deployment → Web app** — *Execute as:* **Me**, *Who has access:*
    **Anyone** → run `doPost` once, **Allow** all permissions → copy the **`/exec`** URL.
 
@@ -150,3 +156,31 @@ asks whether to verify their email via a 6-digit code (or send without). It reus
 **Setup:** just re-paste `Code.gs` and redeploy a new version (adds `doGet` OTP
 handlers + the "Email verified" column). Optionally set the `OTP_DAILY_CAP` property.
 Clear the Sheet once so the new column header writes fresh. No new accounts or keys.
+
+---
+
+## The Odisha forest map's sign-in (`app=ictd`)
+
+The map (repository `sudo-karan/ICTD_Project`, its own Cloudflare Pages project) opens
+only for addresses on a whitelist. Its sign-in page uses this same `/exec`, by JSONP from
+the browser, with `app=ictd` on both actions. **Without `app=ictd` nothing changes for
+the contact form.**
+
+| | Contact form | `app=ictd` |
+|---|---|---|
+| Who gets a code | any address | only an address in `ICTD_WHITELIST`; any other gets `{sent: false, reason: "not-listed"}` and no e-mail |
+| Answer to a right code | `{verified: true}` | `{verified: true, token}`, if the address is still on the list |
+| Codes and hourly limit (3 per address) | its own | the map's own (cache keys start `ictd_`); a code for one never works for the other |
+| Daily cap (`OTP_DAILY_CAP`) | shared | shared: both spend the same Gmail quota |
+| E-mail subject | names karan98.in | names the map |
+
+**Why a token:** Google refuses calls from Cloudflare's servers, so the browser carries the
+answer back to the map's Function, and an answer the browser carries proves nothing unless
+it is signed. The token is `base64url(JSON {email, exp})` + `.` +
+`base64url(HMAC-SHA256(ICTD_GATE_SECRET, payload))`: `payload` is the text before the dot,
+`base64url` has no padding, and `exp` is in seconds, 10 minutes ahead.
+
+**Setup:** add `ICTD_WHITELIST` and `ICTD_GATE_SECRET` (`openssl rand -hex 32`) as script
+properties, re-paste `Code.gs`, and deploy a new version of the existing deployment so the
+`/exec` URL stays the same. No new permissions are needed. With either property missing,
+nobody gets a code for the map (`not-listed`, `not-set-up`).

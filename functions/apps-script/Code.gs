@@ -9,6 +9,19 @@
      ?action=send-otp&email=…&callback=…    → emails a 6-digit code
      ?action=verify-otp&email=…&code=…&callback=…  → checks it
 
+   With &app=ictd the same two actions serve the sign-in of the Odisha forest map
+   (a separate Cloudflare Pages project, repository sudo-karan/ICTD_Project):
+     send-otp   emails a code only to an address in ICTD_WHITELIST; any other address
+                gets { sent: false, reason: 'not-listed' } and nothing is sent.
+     verify-otp answers { verified: true, token }. The token is
+                base64url(JSON { email, exp }) + '.' + base64url(HMAC-SHA256(ICTD_GATE_SECRET, payload)),
+                where payload is the text before the dot, base64url has no padding and
+                exp is in seconds, 10 minutes ahead. The map's Function checks it, because
+                Google refuses calls from Cloudflare's servers and the browser carries the answer.
+   The map's codes and hourly limits are kept apart from the contact form's, so a code
+   for the one never works for the other. The daily cap (otpReserve) is shared: both
+   spend the same Gmail quota.
+
    A single FIELDS list is the source of truth for BOTH the Sheet columns and the
    email table.
 
@@ -20,6 +33,8 @@
      OTP_DAILY_CAP     - (optional) max verification codes/day (default 85); the rest
                          of Gmail's ~100/day stays reserved for message notifications
      SHEET_ID          - (optional) spreadsheet id; otherwise the bound sheet
+     ICTD_WHITELIST    - addresses allowed into the map, comma- or newline-separated
+     ICTD_GATE_SECRET  - must equal the map's Cloudflare env ICTD_GATE_SECRET
 
    Deploy: Web app · Execute as: Me · Who has access: Anyone.
    After pasting: run doPost once → Allow all permissions → Deploy → New version.
@@ -178,8 +193,8 @@ function doGet(e) {
   var p = (e && e.parameter) || {};
   var action = p.action;
   var result;
-  if (action === 'send-otp') result = sendOtp(p.email, p.flow);
-  else if (action === 'verify-otp') result = verifyOtp(p.email, p.code);
+  if (action === 'send-otp') result = sendOtp(p.email, p.flow, p.app);
+  else if (action === 'verify-otp') result = verifyOtp(p.email, p.code, p.app);
   else result = { ok: true, note: 'POST only' };
   return respond(result, p.callback);
 }
@@ -224,40 +239,49 @@ function otpReserve() {
   }
 }
 
-function sendOtp(email, flow) {
+function sendOtp(email, flow, app) {
   email = normEmail(email);
   if (!validEmail(email)) return { sent: false, reason: 'bad-email' };
+  var ictd = app === ICTD_APP;
+  if (ictd && !ictdSecret()) return { sent: false, reason: 'not-set-up' };
+  if (ictd && !ictdListed(email)) return { sent: false, reason: 'not-listed' };
+  var ns = ictd ? ICTD_NS : ''; // the map's limits and codes never mix with the contact form's
   var cache = CacheService.getScriptCache();
   var h = otpHash(email);
   // Fixed 1-hour window per email, max 3 codes (1 initial + 2 resends).
   var now = Date.now();
   var rl;
-  try { rl = JSON.parse(cache.get('rl_' + h) || 'null'); } catch (e) { rl = null; }
+  try { rl = JSON.parse(cache.get(ns + 'rl_' + h) || 'null'); } catch (e) { rl = null; }
   if (!rl || (now - rl.first) >= 3600000) rl = { count: 0, first: now };
   var elapsed = now - rl.first;
   if (rl.count >= 3) {
     return { sent: false, reason: 'rate-limit', retryMins: Math.max(1, Math.ceil((3600000 - elapsed) / 60000)) };
   }
   if (!otpReserve()) return { sent: false, reason: 'quota' };
-  var code = String(Math.floor(100000 + Math.random() * 900000));
+  var code = ictd ? ictdCode() : String(Math.floor(100000 + Math.random() * 900000));
   var body = 'Your karan98.in verification code is:\n\n    ' + code +
     '\n\nIt expires in 10 minutes. If you didn’t request this, you can safely ignore this email.\n\n— karan98.in';
+  var mail = ictd ? ictdMail(email, code)
+    : { to: email, subject: 'Your karan98.in verification code', body: body, name: 'karan98.in' };
   try {
-    MailApp.sendEmail({ to: email, subject: 'Your karan98.in verification code', body: body, name: 'karan98.in' });
+    MailApp.sendEmail(mail);
   } catch (err) {
     return { sent: false, reason: 'send-failed' };
   }
   rl.count += 1;
   var ttl = Math.max(60, Math.ceil((3600000 - elapsed) / 1000)); // expire at the 1-hour edge
-  cache.put('rl_' + h, JSON.stringify(rl), ttl);
-  if (flow) cache.put('fs_' + flowKey(flow), '1', 900);          // "a code went out in THIS flow"
-  cache.put('code_' + h, JSON.stringify({ code: code, tries: 0 }), 600); // 10 min
+  cache.put(ns + 'rl_' + h, JSON.stringify(rl), ttl);
+  if (flow && !ictd) cache.put('fs_' + flowKey(flow), '1', 900); // "a code went out in THIS flow"
+  var held = { code: code, tries: 0 };
+  if (ictd) held.exp = now + 600000; // a wrong try re-stores the code; this keeps it to 10 min from now
+  cache.put(ns + 'code_' + h, JSON.stringify(held), 600); // 10 min
   return { sent: true, remaining: 3 - rl.count }; // codes left after this one (2, then 1, then 0)
 }
 
-function verifyOtp(email, code) {
+function verifyOtp(email, code, app) {
   email = normEmail(email);
   code = String(code == null ? '' : code).trim();
+  if (app === ICTD_APP) return verifyIctdOtp(email, code);
   var cache = CacheService.getScriptCache();
   var h = otpHash(email);
   var raw = cache.get('code_' + h);
@@ -273,6 +297,79 @@ function verifyOtp(email, code) {
   }
   cache.put('code_' + h, JSON.stringify(rec), 600);
   return { verified: false, reason: 'wrong', triesLeft: Math.max(0, 5 - rec.tries) };
+}
+
+/* ------------------------ the map's sign-in (app=ictd) --------------------- */
+
+var ICTD_APP = 'ictd';
+var ICTD_NS = 'ictd_'; // cache-key prefix: the map's codes and hourly limits
+
+function ictdSecret() {
+  return String(PropertiesService.getScriptProperties().getProperty('ICTD_GATE_SECRET') || '').trim();
+}
+
+// Checked at verify too, so that taking an address off the list stops it at once.
+// No list, or an empty one, lets nobody in.
+function ictdListed(email) {
+  if (!validEmail(email)) return false;
+  var raw = PropertiesService.getScriptProperties().getProperty('ICTD_WHITELIST') || '';
+  return raw.split(/[,\r\n]+/).some(function (x) { return normEmail(x) === email; });
+}
+
+// This code opens a gate, so it comes from getUuid rather than Math.random.
+function ictdCode() {
+  var d = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid(), Utilities.Charset.UTF_8);
+  var n = 0;
+  for (var i = 0; i < 6; i++) n = (n * 256 + (d[i] & 0xff)) % 900000;
+  return String(100000 + n);
+}
+
+function ictdMail(email, code) {
+  return {
+    to: email,
+    subject: 'Your sign-in code for the Odisha forest decision layer',
+    body: 'Your code to open the Odisha forest decision layer is:\n\n    ' + code +
+      '\n\nIt expires in 10 minutes. If you didn’t request this, you can safely ignore this email.',
+    name: 'Odisha forest decision layer'
+  };
+}
+
+// The signature is over the base64url text before the dot. Apps Script keeps '=' padding; the token has none.
+function ictdToken(email, secret) {
+  var utf8 = Utilities.Charset.UTF_8;
+  var claim = JSON.stringify({ email: email, exp: Math.floor(Date.now() / 1000) + 600 });
+  var payload = Utilities.base64EncodeWebSafe(claim, utf8).replace(/=+$/, '');
+  var sig = Utilities.computeHmacSha256Signature(payload, secret, utf8);
+  return payload + '.' + Utilities.base64EncodeWebSafe(sig).replace(/=+$/, '');
+}
+
+// Under the script lock, so that guesses made at the same moment can't share one try.
+function verifyIctdOtp(email, code) {
+  if (!ictdListed(email)) return { verified: false, reason: 'not-listed' };
+  var secret = ictdSecret();
+  if (!secret) return { verified: false, reason: 'not-set-up' };
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(3000); } catch (e) { return { verified: false, reason: 'busy' }; }
+  try {
+    var cache = CacheService.getScriptCache();
+    var key = ICTD_NS + 'code_' + otpHash(email);
+    var raw = cache.get(key);
+    if (!raw) return { verified: false, reason: 'expired' };
+    var rec;
+    try { rec = JSON.parse(raw); } catch (e2) { return { verified: false, reason: 'expired' }; }
+    var left = Math.ceil((rec.exp - Date.now()) / 1000);
+    if (!(left > 0)) { cache.remove(key); return { verified: false, reason: 'expired' }; }
+    rec.tries = (rec.tries || 0) + 1;
+    if (rec.tries > 5) { cache.remove(key); return { verified: false, reason: 'too-many' }; }
+    if (code && code === rec.code) {
+      cache.remove(key);
+      return { verified: true, token: ictdToken(email, secret) };
+    }
+    cache.put(key, JSON.stringify(rec), left);
+    return { verified: false, reason: 'wrong', triesLeft: Math.max(0, 5 - rec.tries) };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /* ------------------------------- helpers --------------------------------- */
