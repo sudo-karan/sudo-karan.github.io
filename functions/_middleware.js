@@ -10,6 +10,8 @@
 
    One exception: /ICTD_Project and everything under it redirect to
    https://ictd.karan98.in, where the Odisha forest map sits behind its sign-in.
+   And /phd-code and everything under it redirect to https://phd.karan98.in, where
+   the PhD Forest Stand Explorer sits behind its sign-in.
 
    Why we DON'T key off a local 404: Cloudflare Pages auto-detects this site as a
    single-page app (index.html present, no explicit setting) and serves
@@ -36,6 +38,16 @@ function movedTo(url) {
   return MOVED_TO + (url.pathname.slice(MOVED_PATH.length) || "/") + url.search;
 }
 
+// The PhD explorer, likewise, keeping the rest of the path: the paper's links to
+// /phd-code/v/paper-v3/#... arrive at the same frozen copy, and the fragment goes with them.
+const PHD_PATH = "/phd-code";
+const PHD_TO = "https://phd.karan98.in";
+
+function phdMovedTo(url) {
+  if (url.pathname !== PHD_PATH && !url.pathname.startsWith(PHD_PATH + "/")) return null;
+  return PHD_TO + (url.pathname.slice(PHD_PATH.length) || "/") + url.search;
+}
+
 // Paths THIS repo serves itself — always answered locally, never proxied.
 // (A project literally named "assets", "api" or ".well-known" would collide,
 // but none do.)
@@ -58,6 +70,8 @@ export async function onRequest(context) {
 
   const moved = movedTo(url);
   if (moved) return Response.redirect(moved, 302);
+  const phdMoved = phdMovedTo(url);
+  if (phdMoved) return Response.redirect(phdMoved, 302);
 
   // The portfolio + its Functions own these routes.
   if (isOwnPath(url.pathname)) return next();
