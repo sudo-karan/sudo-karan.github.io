@@ -36,6 +36,8 @@ every message to a **Google Sheet** and **emails** you.
 | `OBFUSCATION_KEY` | `OBF_KEY` in `app.js`, the Function, and Apps Script property (same value) | yes-ish (obscurity) |
 | `ICTD_WHITELIST` | Apps Script property only (the Odisha forest map's sign-in, below) | **no** |
 | `ICTD_GATE_SECRET` | Apps Script property, and the map's Cloudflare env `ICTD_GATE_SECRET` (same value) | **no** |
+| `PHD_WHITELIST` | Apps Script property only (the PhD explorer's sign-in, below) | **no** |
+| `PHD_GATE_SECRET` | Apps Script property, and the explorer's Cloudflare env `PHD_GATE_SECRET` (same value, not ICTD's) | **no** |
 
 > The Function only reads **`PRIVATE_KEY`** now. The old `TURNSTILE_SECRET` /
 > `APPS_SCRIPT_URL` / `SHARED_SECRET` Cloudflare env vars are **unused** (harmless to
@@ -72,6 +74,10 @@ Cloudflare `PRIVATE_KEY` env var. To rotate it, generate a new pair (Web Crypto
      newline-separated, compared lower-case. See the last section.
    - `ICTD_GATE_SECRET` — a long random string; **must match** the map's Cloudflare
      env `ICTD_GATE_SECRET`. See the last section.
+   - `PHD_WHITELIST` — the addresses allowed into the PhD explorer, comma- or
+     newline-separated, compared lower-case. See the last section.
+   - `PHD_GATE_SECRET` — another long random string, not the map's; **must match** the
+     explorer's Cloudflare env `PHD_GATE_SECRET`. See the last section.
 4. **Deploy → New deployment → Web app** — *Execute as:* **Me**, *Who has access:*
    **Anyone** → run `doPost` once, **Allow** all permissions → copy the **`/exec`** URL.
 
@@ -184,3 +190,34 @@ it is signed. The token is `base64url(JSON {email, exp})` + `.` +
 properties, re-paste `Code.gs`, and deploy a new version of the existing deployment so the
 `/exec` URL stays the same. No new permissions are needed. With either property missing,
 nobody gets a code for the map (`not-listed`, `not-set-up`).
+
+---
+
+## The PhD explorer's sign-in (`app=phd`)
+
+The PhD Forest Stand Explorer (repository `sudo-karan/phd-code`, its own Cloudflare Pages
+project) opens only for addresses on a whitelist of its own. Its sign-in page uses this
+same `/exec`, by JSONP from the browser, with `app=phd` on both actions. **Without
+`app=phd` nothing changes for the contact form or the map.**
+
+| | Contact form | `app=ictd` | `app=phd` |
+|---|---|---|---|
+| Who gets a code | any address | only an address in `ICTD_WHITELIST` | only an address in `PHD_WHITELIST` |
+| Answer to `send-otp` | `{sent: true}` | `{sent: false, reason: "not-listed"}` to an address not on the list | `{ok: true, remaining}` to every address the limits allow, listed or not; it doesn't say who is listed |
+| Answer to a wrong code | `wrong`, then `too-many` | `not-listed` to an address not on the list | `wrong`, then `too-many`, listed or not |
+| Answer to a right code | `{verified: true}` | `{verified: true, token}` | `{verified: true, token}`, the token's claim carrying `aud: "phd"` |
+| Time taken by `send-otp` | as long as it takes | as long as it takes | always `PHD_ANSWER_MS` (4 s) from the request |
+| Codes and hourly limit (3 per address) | its own | the map's own (`ictd_`) | the explorer's own (`phd_`); a code for one never works for another |
+| Daily cap (`OTP_DAILY_CAP`) | shared | shared | shared |
+| E-mail subject | names karan98.in | names the map | names the PhD Forest Stand Explorer |
+
+The token is built as the map's is (above), over `{email, exp, aud: "phd"}` and signed
+with `PHD_GATE_SECRET`. The explorer's Function takes no token or cookie without
+`aud: "phd"`, so the map's tokens and cookies don't open it, and being on `ICTD_WHITELIST`
+gets nobody in.
+
+**Setup:** add `PHD_WHITELIST` and `PHD_GATE_SECRET` (`openssl rand -hex 32`; not the
+same as `ICTD_GATE_SECRET`, or nobody gets in) as script properties, re-paste `Code.gs`,
+and deploy a new version of the existing deployment so the `/exec` URL stays the same. No
+new permissions are needed. Adding or taking off an address later needs no new
+deployment: the list is read on every request.

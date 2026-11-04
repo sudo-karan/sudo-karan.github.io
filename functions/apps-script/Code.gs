@@ -22,6 +22,19 @@
    for the one never works for the other. The daily cap (otpReserve) is shared: both
    spend the same Gmail quota.
 
+   With &app=phd the same two actions serve the sign-in of the PhD Forest Stand Explorer
+   (a separate Cloudflare Pages project, repository sudo-karan/phd-code). It has its own
+   whitelist, secret, codes and hourly limits, and its answers don't say who is listed:
+     send-otp   answers { ok: true, remaining } to any well-formed address that the
+                hourly and daily limits allow, and e-mails a code only to an address in
+                PHD_WHITELIST. A failed send isn't reported, and every answer waits until
+                PHD_ANSWER_MS after the request began, so that sending mail doesn't show.
+     verify-otp an address not on the list holds a decoy record that no code matches, so
+                it gets the same 'wrong' and 'too-many' as a listed one. A right code for an
+                address still on the list gets { verified: true, token }: the token as above,
+                over { email, exp, aud: 'phd' }, signed with PHD_GATE_SECRET.
+   It lets nobody in (not-set-up) if PHD_GATE_SECRET is missing or equals ICTD_GATE_SECRET.
+
    A single FIELDS list is the source of truth for BOTH the Sheet columns and the
    email table.
 
@@ -35,6 +48,8 @@
      SHEET_ID          - (optional) spreadsheet id; otherwise the bound sheet
      ICTD_WHITELIST    - addresses allowed into the map, comma- or newline-separated
      ICTD_GATE_SECRET  - must equal the map's Cloudflare env ICTD_GATE_SECRET
+     PHD_WHITELIST     - addresses allowed into the PhD explorer, comma- or newline-separated
+     PHD_GATE_SECRET   - must equal the explorer's Cloudflare env PHD_GATE_SECRET, and not ICTD's
 
    Deploy: Web app · Execute as: Me · Who has access: Anyone.
    After pasting: run doPost once → Allow all permissions → Deploy → New version.
@@ -193,6 +208,7 @@ function doGet(e) {
   var p = (e && e.parameter) || {};
   var action = p.action;
   var result;
+  if (p.app === PHD_APP) return respond(phdAnswer(action, p.email, p.code), p.callback);
   if (action === 'send-otp') result = sendOtp(p.email, p.flow, p.app);
   else if (action === 'verify-otp') result = verifyOtp(p.email, p.code, p.app);
   else result = { ok: true, note: 'POST only' };
@@ -364,6 +380,145 @@ function verifyIctdOtp(email, code) {
     if (code && code === rec.code) {
       cache.remove(key);
       return { verified: true, token: ictdToken(email, secret) };
+    }
+    cache.put(key, JSON.stringify(rec), left);
+    return { verified: false, reason: 'wrong', triesLeft: Math.max(0, 5 - rec.tries) };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/* ------------------- the PhD explorer's sign-in (app=phd) ------------------ */
+
+var PHD_APP = 'phd';
+var PHD_NS = 'phd_'; // cache-key prefix: the explorer's codes and hourly limits
+var PHD_ANSWER_MS = 4000; // every send-otp answer leaves this long after the request began
+
+function phdAnswer(action, email, code) {
+  if (action === 'send-otp') return phdSend(email);
+  if (action === 'verify-otp') return phdVerify(email, code);
+  return { ok: true, note: 'POST only' };
+}
+
+// Missing, blank, or the same as the map's: then nobody gets in.
+function phdSecret() {
+  var props = PropertiesService.getScriptProperties();
+  var secret = String(props.getProperty('PHD_GATE_SECRET') || '').trim();
+  var ictd = String(props.getProperty('ICTD_GATE_SECRET') || '').trim();
+  return secret && secret !== ictd ? secret : '';
+}
+
+// Read on every request, so that the list changes with no new deployment. Checked at
+// verify too, so that taking an address off the list stops it at once. No list lets nobody in.
+function phdListed(email) {
+  if (!validEmail(email)) return false;
+  var raw = PropertiesService.getScriptProperties().getProperty('PHD_WHITELIST') || '';
+  return raw.split(/[,\r\n]+/).some(function (x) { return normEmail(x) === email; });
+}
+
+// What otpReserve would answer, without taking a slot: the answer for an address not on the list.
+function phdQuotaOpen() {
+  if (MailApp.getRemainingDailyQuota() <= 15) return false;
+  var cap = parseInt(PropertiesService.getScriptProperties().getProperty('OTP_DAILY_CAP') || '85', 10) || 85;
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(3000); } catch (e) { return false; }
+  try {
+    var today = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyyMMdd');
+    var q;
+    try { q = JSON.parse(PropertiesService.getScriptProperties().getProperty('otp_quota') || '{}'); } catch (e2) { q = {}; }
+    if (!q || q.date !== today) return true;
+    return q.count < cap;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// This code opens a gate, so it comes from getUuid rather than Math.random.
+function phdCode() {
+  var d = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid(), Utilities.Charset.UTF_8);
+  var n = 0;
+  for (var i = 0; i < 6; i++) n = (n * 256 + (d[i] & 0xff)) % 900000;
+  return String(100000 + n);
+}
+
+function phdMail(email, code) {
+  return {
+    to: email,
+    subject: 'Your sign-in code for the PhD Forest Stand Explorer',
+    body: 'Your code to open the PhD Forest Stand Explorer is:\n\n    ' + code +
+      '\n\nIt expires in 10 minutes. If you didn’t request this, you can safely ignore this email.',
+    name: 'PhD Forest Stand Explorer'
+  };
+}
+
+// As ictdToken, with aud added: the explorer's Function takes no token without aud 'phd'.
+function phdToken(email, secret) {
+  var utf8 = Utilities.Charset.UTF_8;
+  var claim = JSON.stringify({ email: email, exp: Math.floor(Date.now() / 1000) + 600, aud: PHD_APP });
+  var payload = Utilities.base64EncodeWebSafe(claim, utf8).replace(/=+$/, '');
+  var sig = Utilities.computeHmacSha256Signature(payload, secret, utf8);
+  return payload + '.' + Utilities.base64EncodeWebSafe(sig).replace(/=+$/, '');
+}
+
+function phdSend(email) {
+  var start = Date.now();
+  var answer = phdSendNow(normEmail(email), start);
+  var wait = PHD_ANSWER_MS - (Date.now() - start);
+  if (wait > 0) Utilities.sleep(wait);
+  return answer;
+}
+
+// The same answer whether or not the address is listed: the hourly limit counts for any address,
+// the daily cap is said to any address, and a failed send isn't reported, since only a listed
+// address can fail.
+function phdSendNow(email, now) {
+  if (!validEmail(email)) return { ok: false, reason: 'bad-email' };
+  if (!phdSecret()) return { ok: false, reason: 'not-set-up' };
+  var listed = phdListed(email);
+  var cache = CacheService.getScriptCache();
+  var h = otpHash(email);
+  var rl;
+  try { rl = JSON.parse(cache.get(PHD_NS + 'rl_' + h) || 'null'); } catch (e) { rl = null; }
+  if (!rl || (now - rl.first) >= 3600000) rl = { count: 0, first: now };
+  var elapsed = now - rl.first;
+  if (rl.count >= 3) {
+    return { ok: false, reason: 'rate-limit', retryMins: Math.max(1, Math.ceil((3600000 - elapsed) / 60000)) };
+  }
+  if (!(listed ? otpReserve() : phdQuotaOpen())) return { ok: false, reason: 'quota' };
+  var held = { tries: 0, exp: now + 600000 }; // without a code, a decoy: no code matches it
+  if (listed) {
+    held.code = phdCode();
+    try { MailApp.sendEmail(phdMail(email, held.code)); } catch (err) { /* not reported: see above */ }
+  }
+  rl.count += 1;
+  cache.put(PHD_NS + 'rl_' + h, JSON.stringify(rl), Math.max(60, Math.ceil((3600000 - elapsed) / 1000)));
+  cache.put(PHD_NS + 'code_' + h, JSON.stringify(held), 600);
+  return { ok: true, remaining: 3 - rl.count };
+}
+
+// Under the script lock, as the map's, so that guesses made at the same moment can't share one try.
+function phdVerify(email, code) {
+  email = normEmail(email);
+  code = String(code == null ? '' : code).trim();
+  var secret = phdSecret();
+  if (!secret) return { verified: false, reason: 'not-set-up' };
+  var listed = phdListed(email);
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(3000); } catch (e) { return { verified: false, reason: 'busy' }; }
+  try {
+    var cache = CacheService.getScriptCache();
+    var key = PHD_NS + 'code_' + otpHash(email);
+    var raw = cache.get(key);
+    if (!raw) return { verified: false, reason: 'expired' };
+    var rec;
+    try { rec = JSON.parse(raw); } catch (e2) { return { verified: false, reason: 'expired' }; }
+    var left = Math.ceil((rec.exp - Date.now()) / 1000);
+    if (!(left > 0)) { cache.remove(key); return { verified: false, reason: 'expired' }; }
+    rec.tries = (rec.tries || 0) + 1;
+    if (rec.tries > 5) { cache.remove(key); return { verified: false, reason: 'too-many' }; }
+    if (listed && rec.code && code === rec.code) {
+      cache.remove(key);
+      return { verified: true, token: phdToken(email, secret) };
     }
     cache.put(key, JSON.stringify(rec), left);
     return { verified: false, reason: 'wrong', triesLeft: Math.max(0, 5 - rec.tries) };
