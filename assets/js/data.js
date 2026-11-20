@@ -218,6 +218,7 @@ window.SITE = {
     {
       name: "fmu — Forest Management Units", category: "AI / ML & Research", badge: "Doctoral research",
       code: "https://github.com/sudo-karan/phd-code", featured: true,
+      clampOnPhones: true, // much longer than the rest; the Research section has it in full
       blurb: "An unsupervised, multi-sensor pipeline on Google Earth Engine that delineates forest stands from open satellite data — Sentinel-2 phenology, Sentinel-1 SAR, canopy height and terrain, segmented with SNIC superpixels and k-means. Tested at Sanjay Van (Delhi) and Mudumalai Tiger Reserve, and extended to Google DeepMind’s AlphaEarth Foundations embeddings.",
       tech: ["Google Earth Engine", "Sentinel-1/2", "SNIC + k-means", "Python"],
     },
