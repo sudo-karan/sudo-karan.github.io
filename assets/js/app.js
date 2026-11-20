@@ -18,8 +18,130 @@
     dl: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>',
     ext: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>',
     send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>',
-    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>'
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+    left: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>',
+    right: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>'
   };
+
+  /* ---- phone layout: swipe rails + "show more" ------------------------------
+     On phones a card collection becomes a horizontal, scroll-snapping rail: swipe
+     left/right, the next card peeks in, and arrows + dots show the position.
+     Native CSS scroll-snap does the swiping, so it keeps the platform's scroll
+     physics and stays usable by keyboard and screen reader (every card stays in
+     the DOM). Above the breakpoint the container keeps its normal grid and the
+     controls are hidden by CSS. */
+  var RAIL_MQ = window.matchMedia("(max-width: 640px)");
+
+  function makeRail(box, o) {
+    if (!box) return { refresh: function () {} };
+    box.classList.add("rail");
+    var ctl = el("div", "rail-ctl");
+    var prev = el("button", "rail-btn", ICON.left), next = el("button", "rail-btn", ICON.right);
+    var dots = el("div", "rail-dots");
+    prev.type = next.type = "button";
+    prev.setAttribute("aria-label", "Previous " + o.noun);
+    next.setAttribute("aria-label", "Next " + o.noun);
+    dots.setAttribute("aria-hidden", "true"); // decorative; the arrows carry the semantics
+    ctl.appendChild(prev); ctl.appendChild(dots); ctl.appendChild(next);
+    box.parentNode.insertBefore(ctl, box.nextSibling);
+
+    var items = [], cur = 0;
+    function startPad() {
+      var cs = getComputedStyle(box);
+      var sp = parseFloat(cs.scrollPaddingLeft);
+      return isNaN(sp) ? (parseFloat(cs.paddingLeft) || 0) : sp;
+    }
+    // The item whose left edge sits nearest the snap line (or the last one at the end).
+    function nearest() {
+      if (!items.length) return 0;
+      if (box.scrollLeft >= box.scrollWidth - box.clientWidth - 2) return items.length - 1;
+      var line = box.getBoundingClientRect().left + startPad(), best = 0, bestD = Infinity;
+      items.forEach(function (it, i) {
+        var d = Math.abs(it.getBoundingClientRect().left - line);
+        if (d < bestD) { bestD = d; best = i; }
+      });
+      return best;
+    }
+    function paint() {
+      cur = nearest();
+      [].forEach.call(dots.children, function (d, i) { d.classList.toggle("on", i === cur); });
+      prev.disabled = cur <= 0;
+      next.disabled = cur >= items.length - 1;
+    }
+    function go(i) {
+      var it = items[i]; if (!it) return;
+      var left = box.scrollLeft + it.getBoundingClientRect().left - box.getBoundingClientRect().left - startPad();
+      box.scrollTo({ left: left, behavior: reduce ? "auto" : "smooth" });
+    }
+    // Re-read the visible items (a filter may hide some) and rebuild the dots.
+    function refresh(reset) {
+      items = [].filter.call(box.children, function (c) { return getComputedStyle(c).display !== "none"; });
+      dots.innerHTML = "";
+      items.forEach(function (_, i) {
+        var d = el("button", "dot"); d.type = "button"; d.tabIndex = -1;
+        d.addEventListener("click", function () { go(i); });
+        dots.appendChild(d);
+      });
+      ctl.hidden = items.length < 2;
+      if (RAIL_MQ.matches) {
+        // A focusable, named region so keyboard users can arrow-scroll it.
+        box.setAttribute("role", "region"); box.setAttribute("aria-label", o.label); box.tabIndex = 0;
+      } else {
+        box.removeAttribute("role"); box.removeAttribute("aria-label"); box.removeAttribute("tabindex");
+      }
+      if (reset && RAIL_MQ.matches) {
+        // A smooth scroll or fling still in flight would re-apply its leftover
+        // delta on the next frame (landing mid-card). Briefly making the box
+        // non-scrollable stops it; then restore and re-assert the start.
+        box.style.overflowX = "hidden";
+        box.scrollLeft = 0;
+        requestAnimationFrame(function () {
+          box.style.overflowX = "";
+          box.scrollLeft = 0;
+          paint();
+        });
+      }
+      paint();
+    }
+    var ticking = false;
+    function onScroll() {
+      if (ticking) return; ticking = true;
+      requestAnimationFrame(function () { paint(); ticking = false; });
+    }
+    box.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll, { passive: true });
+    prev.addEventListener("click", function () { go(cur - 1); });
+    next.addEventListener("click", function () { go(cur + 1); });
+    var onMq = function () { refresh(true); };
+    if (RAIL_MQ.addEventListener) RAIL_MQ.addEventListener("change", onMq);
+    else if (RAIL_MQ.addListener) RAIL_MQ.addListener(onMq);
+    refresh(false);
+    return { refresh: refresh };
+  }
+
+  // Long bullet lists show their first two items on phones, with a toggle for the
+  // rest. (CSS only hides them below the breakpoint; the button is hidden above it.)
+  function clampLists(root) {
+    if (!root) return;
+    root.querySelectorAll("ul").forEach(function (ul, n) {
+      var lis = ul.children;
+      if (lis.length <= 3) return;
+      var extra = lis.length - 2;
+      for (var i = 2; i < lis.length; i++) lis[i].classList.add("xtra");
+      ul.classList.add("clamp");
+      ul.id = ul.id || root.id + "-list-" + n;
+      var btn = el("button", "more-btn"); btn.type = "button";
+      btn.setAttribute("aria-controls", ul.id);
+      function label() {
+        var open = ul.classList.contains("open");
+        btn.textContent = open ? "Show fewer" : "Show " + extra + " more highlights";
+        btn.setAttribute("aria-expanded", open ? "true" : "false");
+      }
+      btn.addEventListener("click", function () { ul.classList.toggle("open"); label(); });
+      label();
+      ul.parentNode.insertBefore(btn, ul.nextSibling);
+    });
+  }
 
   function renderNav() {
     var nl = $("#navLinks");
@@ -90,7 +212,7 @@
   }
 
   function renderWork() {
-    var grid = $("#workGrid"), filters = $("#filters");
+    var grid = $("#workGrid"), filters = $("#filters"), rail;
     S.categories.forEach(function (cat, i) {
       var b = el("button", "filter" + (i === 0 ? " active" : ""), esc(cat));
       b.addEventListener("click", function () {
@@ -99,11 +221,21 @@
         grid.querySelectorAll(".card").forEach(function (c) {
           c.style.display = (cat === "All" || c.getAttribute("data-cat") === cat) ? "" : "none";
         });
+        // On phones the chips are one scrolling row: keep the chosen one in view,
+        // and restart the swipe rail from its first (still visible) card.
+        if (RAIL_MQ.matches) {
+          var fl = filters.getBoundingClientRect(), br = b.getBoundingClientRect();
+          if (br.left < fl.left || br.right > fl.right) {
+            filters.scrollTo({ left: filters.scrollLeft + br.left - fl.left - (fl.width - br.width) / 2, behavior: reduce ? "auto" : "smooth" });
+          }
+        }
+        rail.refresh(true);
       });
       filters.appendChild(b);
     });
     var ordered = S.projects.slice().sort(function (x, y) { return (y.featured ? 1 : 0) - (x.featured ? 1 : 0); });
     ordered.forEach(function (pr) { grid.appendChild(projectCard(pr)); });
+    rail = makeRail(grid, { noun: "project", label: "Projects" });
     $("#allRepos").href = S.contact.github + "?tab=repositories";
   }
 
@@ -140,6 +272,8 @@
     renderTimeline(S.experience, "#exp");
     renderTimeline(S.internships, "#intern");
     renderTimeline(S.leadership, "#lead");
+    // Internships stay stacked on phones: their sizes differ too much for a rail.
+    clampLists($("#exp"));
   }
 
   function renderResearch() {
@@ -167,6 +301,7 @@
       var items = g.items.map(function (i) { return '<span class="it">' + esc(i) + "</span>"; }).join("");
       grid.appendChild(el("div", "skill-card reveal", "<h4>" + esc(g.group) + '</h4><div class="items">' + items + "</div>"));
     });
+    makeRail(grid, { noun: "skill group", label: "Skills" });
     var ints = $("#interests");
     if (ints && S.interests && S.interests.length) {
       ints.innerHTML = '<span class="ilabel">Interests</span>' +
@@ -188,6 +323,7 @@
       cl.appendChild(el("div", "cert-row", "<div><div>" + esc(name) + "</div>" +
         (issuer ? '<div class="iss">' + esc(issuer) + "</div>" : "") + "</div>"));
     });
+    makeRail($("#credentials .cred-grid"), { noun: "panel", label: "Education and certifications" });
   }
 
   function renderContact() {
