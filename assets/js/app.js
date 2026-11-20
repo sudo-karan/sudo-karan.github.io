@@ -810,7 +810,10 @@
       deviceModel: "",
       architecture: "",
       bitness: "",
-      deviceMemory: (nav.deviceMemory ? nav.deviceMemory + " GB" : ""),
+      // Browsers round RAM to a power of two and cap it (Chrome on Android tops out
+      // at 8 GB), so a 12 GB phone reports 8 — label it as the approximation it is.
+      deviceMemory: (nav.deviceMemory ? nav.deviceMemory + " GB (approx." +
+        (nav.deviceMemory >= 8 ? "; browsers cap this, so it may be more" : "") + ")" : ""),
       cpuCores: (nav.hardwareConcurrency || ""),
       touchPoints: (nav.maxTouchPoints != null ? nav.maxTouchPoints : ""),
       gpu: gpu(),
