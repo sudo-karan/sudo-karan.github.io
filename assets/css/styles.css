@@ -426,6 +426,90 @@ footer .socials { display: flex; gap: 0.8rem; }
   .pillars .wrap { gap: 0.5rem 1.4rem; }
 }
 
+/* ---- phones: swipe rails + "show more" ------------------------------------
+   Card collections (projects, skills, internships, credentials) become
+   horizontal scroll-snap rails — swipe left/right, the next card peeks in —
+   and long bullet lists collapse behind a toggle. app.js adds the .rail class,
+   the arrow/dot controls and the toggles; above 640px they are inert/hidden. */
+.rail-ctl, .more-btn { display: none; }
+@media (max-width: 640px) {
+  section { padding: 3rem 0; }
+  .sec-head { margin-bottom: 1.7rem; }
+  .sub-head { margin: 2.1rem 0 0.6rem; }
+  .portrait { max-width: 250px; }
+
+  .rail {
+    --rail-gap: 0.85rem;
+    display: flex; gap: var(--rail-gap); align-items: stretch; columns: auto;
+    overflow-x: auto; overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory; scroll-padding-inline: var(--pad);
+    /* full-bleed: cards line up with the text but slide edge to edge */
+    margin-inline: calc(-1 * var(--pad)); padding: 0.5rem 0 1rem var(--pad);
+    scrollbar-width: none;
+  }
+  .rail::-webkit-scrollbar { display: none; }
+  /* trailing spacer instead of padding-right (not every engine scrolls into it) */
+  .rail::after { content: ""; flex: 0 0 max(1px, calc(var(--pad) - var(--rail-gap))); }
+  .rail > * { flex: 0 0 84%; min-width: 0; margin: 0; scroll-snap-align: start; }
+  .rail > .reveal { transform: none; }            /* fade only inside the clip */
+  .rail > .card:hover { transform: none; }        /* no sticky lift after a tap */
+  .rail:focus-visible { outline: 2px solid var(--violet); outline-offset: -2px; border-radius: 14px; }
+
+  .rail-ctl { display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
+  .rail-ctl[hidden] { display: none; }
+  .rail-btn {
+    width: 44px; height: 44px; flex: none; display: grid; place-items: center; cursor: pointer;
+    border-radius: 50%; border: 1px solid var(--line-2); background: var(--card); color: var(--ink);
+    transition: opacity .2s, border-color .2s;
+  }
+  .rail-btn svg { width: 18px; height: 18px; }
+  .rail-btn:disabled { opacity: 0.35; cursor: default; }
+  .rail-dots { display: flex; align-items: center; flex-wrap: wrap; justify-content: center; max-width: 62vw; }
+  .rail-dots .dot { width: 16px; height: 24px; padding: 0; border: 0; background: none; cursor: pointer; display: grid; place-items: center; }
+  .rail-dots .dot::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: var(--line-2); transition: width .25s var(--ease), background .25s; }
+  .rail-dots .dot.on { width: 26px; }
+  .rail-dots .dot.on::before { width: 18px; background: var(--violet); }
+
+  /* projects: filter chips become one scrolling row */
+  .filters {
+    flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+    margin: 0 calc(-1 * var(--pad)) 0.6rem; padding: 0.15rem var(--pad);
+  }
+  .filters::-webkit-scrollbar { display: none; }
+  .filter { flex: none; }
+  .card { padding: 1.3rem; }
+  .card-top { flex-wrap: wrap; }
+  /* rail cards share one height; cap the blurb so a single long one doesn't
+     stretch every card (the full text stays in the DOM for screen readers) */
+  .rail > .card .blurb {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; line-clamp: 6; overflow: hidden;
+  }
+  .see-all { margin-top: 1.4rem; }
+
+  /* experience: dates/place on one line; long lists show two items + toggle.
+     align-content keeps a card's rows packed at the top when a rail stretches it. */
+  .exp-item { gap: 0.55rem; align-content: start; }
+  .exp-when { display: flex; flex-wrap: wrap; align-items: center; align-content: flex-start; gap: 0.2rem 0.75rem; }
+  .exp-when .loc, .exp-when .now { margin-top: 0; }
+  ul.clamp:not(.open) > li.xtra { display: none; }
+  .more-btn {
+    display: inline-flex; align-items: center; min-height: 44px; margin-top: 0.2rem; padding: 0;
+    font: inherit; font-size: 0.88rem; font-weight: 600; color: var(--violet-deep);
+    background: none; border: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px;
+  }
+
+  /* building: drop the decorative terminal mock-up (aria-hidden already) */
+  .build-term { display: none; }
+
+  /* about: stats as a 2 × 2 grid instead of four stacked cards */
+  .about-stats { grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+  .stat-card { padding: 1rem 1.05rem; }
+  .stat-card .v { font-size: 1.55rem; }
+  .stat-card .l { font-size: 0.82rem; line-height: 1.4; }
+
+  .panel { padding: 1.35rem; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
   .reveal { opacity: 1 !important; transform: none !important; }
