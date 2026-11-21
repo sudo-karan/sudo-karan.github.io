@@ -462,15 +462,19 @@ footer .socials { display: flex; gap: 0.8rem; }
   .rail-btn {
     width: 44px; height: 44px; flex: none; display: grid; place-items: center; cursor: pointer;
     border-radius: 50%; border: 1px solid var(--line-2); background: var(--card); color: var(--ink);
-    transition: opacity .2s, border-color .2s;
+    transition: border-color .2s, background-color .2s;
   }
-  .rail-btn svg { width: 18px; height: 18px; }
-  .rail-btn[aria-disabled="true"] { opacity: 0.35; cursor: default; }
-  /* position dots: one row that shrinks on very narrow screens instead of wrapping */
-  .rail-dots { display: flex; align-items: center; justify-content: center; min-width: 0; }
-  .rail-dots .dot { flex: 0 1 16px; min-width: 10px; height: 24px; display: grid; place-items: center; }
+  .rail-btn svg { width: 18px; height: 18px; transition: opacity .2s; }
+  /* at either end: fade the arrow, not the button — opacity on the button would
+     fade its keyboard focus ring too */
+  .rail-btn[aria-disabled="true"] { cursor: default; border-color: var(--line); background: transparent; }
+  .rail-btn[aria-disabled="true"] svg { opacity: 0.35; }
+  /* position dots: a 16px pitch that closes up to 10px on narrow screens; they
+     wrap only when even that doesn't fit (a phone zoomed to about 150% or more) */
+  .rail-dots { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; min-width: 0; }
+  .rail-dots .dot { flex: 1 0 10px; width: 16px; max-width: 16px; height: 24px; display: grid; place-items: center; }
   .rail-dots .dot::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: rgba(29,26,21,0.55); transition: width .25s var(--ease), background .25s; }
-  .rail-dots .dot.on { flex: 0 0 26px; }
+  .rail-dots .dot.on { flex: 0 0 26px; width: 26px; max-width: none; }
   .rail-dots .dot.on::before { width: 18px; background: var(--violet); }
 
   .filters { margin-bottom: 0.75rem; }
@@ -481,7 +485,8 @@ footer .socials { display: flex; gap: 0.8rem; }
   .rail > .card .blurb { flex: none; }
   .rail > .card .tech { margin-top: auto; }
   /* one blurb (fmu) is far longer than the rest and would stretch every card;
-     cap it at six lines (the Research section has it in full) */
+     cap it at six lines (the Research section has it in full). app.js lets it
+     run longer when another card makes the rail taller anyway. */
   .rail > .card .blurb.trim {
     display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; line-clamp: 6; overflow: hidden;
   }
