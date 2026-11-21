@@ -61,6 +61,8 @@ img { display: block; max-width: 100%; }
 ::selection { background: var(--violet); color: #fff; }
 
 .serif { font-family: var(--serif); }
+/* read by screen readers, not shown */
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 .wrap { width: min(100%, var(--maxw)); margin-inline: auto; padding-inline: var(--pad); position: relative; z-index: 1; }
 
 /* ---- labels / section heads -------------------------------------------- */
@@ -427,10 +429,10 @@ footer .socials { display: flex; gap: 0.8rem; }
 }
 
 /* ---- phones: swipe rails + "show more" ------------------------------------
-   Card collections (projects, skills, internships, credentials) become
-   horizontal scroll-snap rails — swipe left/right, the next card peeks in —
-   and long bullet lists collapse behind a toggle. app.js adds the .rail class,
-   the arrow/dot controls and the toggles; above 640px they are inert/hidden. */
+   Card collections (projects, skills, credentials) become horizontal
+   scroll-snap rails — swipe left/right, the next card peeks in — and long
+   bullet lists collapse behind a toggle. app.js adds the .rail class, the
+   arrow/dot controls and the toggles; above 640px they are inert/hidden. */
 .rail-ctl, .more-btn { display: none; }
 @media (max-width: 640px) {
   section { padding: 3rem 0; }
@@ -460,30 +462,37 @@ footer .socials { display: flex; gap: 0.8rem; }
   .rail-btn {
     width: 44px; height: 44px; flex: none; display: grid; place-items: center; cursor: pointer;
     border-radius: 50%; border: 1px solid var(--line-2); background: var(--card); color: var(--ink);
-    transition: opacity .2s, border-color .2s;
+    transition: border-color .2s, background-color .2s;
   }
-  .rail-btn svg { width: 18px; height: 18px; }
-  .rail-btn:disabled { opacity: 0.35; cursor: default; }
-  .rail-dots { display: flex; align-items: center; flex-wrap: wrap; justify-content: center; max-width: 62vw; }
-  .rail-dots .dot { width: 16px; height: 24px; padding: 0; border: 0; background: none; cursor: pointer; display: grid; place-items: center; }
-  .rail-dots .dot::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: var(--line-2); transition: width .25s var(--ease), background .25s; }
-  .rail-dots .dot.on { width: 26px; }
+  .rail-btn svg { width: 18px; height: 18px; transition: opacity .2s; }
+  /* at either end: fade the arrow, not the button — opacity on the button would
+     fade its keyboard focus ring too */
+  .rail-btn[aria-disabled="true"] { cursor: default; border-color: var(--line); background: transparent; }
+  .rail-btn[aria-disabled="true"] svg { opacity: 0.35; }
+  /* position dots: a 16px pitch that closes up to 10px on narrow screens; they
+     wrap only when even that doesn't fit (a phone zoomed to about 150% or more) */
+  .rail-dots { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; min-width: 0; }
+  .rail-dots .dot { flex: 1 0 10px; width: 16px; max-width: 16px; height: 24px; display: grid; place-items: center; }
+  .rail-dots .dot::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: rgba(29,26,21,0.55); transition: width .25s var(--ease), background .25s; }
+  .rail-dots .dot.on { flex: 0 0 26px; width: 26px; max-width: none; }
   .rail-dots .dot.on::before { width: 18px; background: var(--violet); }
 
-  /* projects: filter chips become one scrolling row */
-  .filters {
-    flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
-    margin: 0 calc(-1 * var(--pad)) 0.6rem; padding: 0.15rem var(--pad);
-  }
-  .filters::-webkit-scrollbar { display: none; }
-  .filter { flex: none; }
+  .filters { margin-bottom: 0.75rem; }
   .card { padding: 1.3rem; }
   .card-top { flex-wrap: wrap; }
-  /* rail cards share one height; cap the blurb so a single long one doesn't
-     stretch every card (the full text stays in the DOM for screen readers) */
-  .rail > .card .blurb {
+  /* rail cards share one height: any spare height goes above the tags, so the
+     tags and links line up along the bottom of every card */
+  .rail > .card .blurb { flex: none; }
+  .rail > .card .tech { margin-top: auto; }
+  /* one blurb (fmu) is far longer than the rest and would stretch every card;
+     cap it at six lines (the Research section has it in full). app.js lets it
+     run longer when another card makes the rail taller anyway. */
+  .rail > .card .blurb.trim {
     display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; line-clamp: 6; overflow: hidden;
   }
+  /* small phones: keep each link button on one line; Source drops below if needed */
+  .card .links { flex-wrap: wrap; }
+  .card .links a { white-space: nowrap; }
   .see-all { margin-top: 1.4rem; }
 
   /* experience: dates/place on one line; long lists show two items + toggle.

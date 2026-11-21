@@ -38,14 +38,18 @@
     var ctl = el("div", "rail-ctl");
     var prev = el("button", "rail-btn", ICON.left), next = el("button", "rail-btn", ICON.right);
     var dots = el("div", "rail-dots");
+    var status = el("span", "sr-only"); // announces arrow presses: "Project 2 of 11: …"
     prev.type = next.type = "button";
     prev.setAttribute("aria-label", "Previous " + o.noun);
     next.setAttribute("aria-label", "Next " + o.noun);
-    dots.setAttribute("aria-hidden", "true"); // decorative; the arrows carry the semantics
-    ctl.appendChild(prev); ctl.appendChild(dots); ctl.appendChild(next);
+    dots.setAttribute("aria-hidden", "true"); // a visual position cue only; the arrows are the controls
+    status.setAttribute("aria-live", "polite");
+    ctl.appendChild(prev); ctl.appendChild(dots); ctl.appendChild(next); ctl.appendChild(status);
     box.parentNode.insertBefore(ctl, box.nextSibling);
 
     var items = [], cur = 0;
+    var aim = -1, aimAt = 0; // the card the last arrow press is still scrolling to
+    var said = -1;           // the card the live region last announced
     function startPad() {
       var cs = getComputedStyle(box);
       var sp = parseFloat(cs.scrollPaddingLeft);
@@ -64,24 +68,43 @@
     }
     function paint() {
       cur = nearest();
+      if (cur === aim) aim = -1;
+      // Once the rail rests on another card (a swipe, Tab, a filter) the last
+      // announcement is wrong: empty it so it isn't read out later in the page.
+      if (said > -1 && aim < 0 && cur !== said) { said = -1; status.textContent = ""; }
       [].forEach.call(dots.children, function (d, i) { d.classList.toggle("on", i === cur); });
-      prev.disabled = cur <= 0;
-      next.disabled = cur >= items.length - 1;
+      // aria-disabled rather than disabled: disabling the focused arrow at either
+      // end would drop keyboard focus to the page. go() ignores out-of-range steps.
+      prev.setAttribute("aria-disabled", cur <= 0 ? "true" : "false");
+      next.setAttribute("aria-disabled", cur >= items.length - 1 ? "true" : "false");
     }
-    function go(i) {
+    // instant: for focus moves. The browser's own focus scroll is instant and
+    // would cut a smooth scroll short, leaving the rail between two cards.
+    function go(i, instant) {
       var it = items[i]; if (!it) return;
       var left = box.scrollLeft + it.getBoundingClientRect().left - box.getBoundingClientRect().left - startPad();
-      box.scrollTo({ left: left, behavior: reduce ? "auto" : "smooth" });
+      left = Math.max(0, Math.min(left, box.scrollWidth - box.clientWidth));
+      if (instant && Math.abs(left - box.scrollLeft) < 1) return;
+      box.scrollTo({ left: left, behavior: reduce || instant ? "auto" : "smooth" });
+    }
+    // Arrow presses during a smooth scroll (quick taps, a held key) count on
+    // from where the previous press is heading, not from the card still shown.
+    function step(d) {
+      var from = aim > -1 && Date.now() - aimAt < 700 ? aim : cur;
+      var i = from + d, it = items[i]; if (!it) return;
+      aim = i; aimAt = Date.now();
+      go(i);
+      var h = it.querySelector("h3, h4");
+      said = i;
+      status.textContent = o.noun.charAt(0).toUpperCase() + o.noun.slice(1) + " " + (i + 1) + " of " + items.length +
+        (h ? ": " + h.textContent.trim() : "");
     }
     // Re-read the visible items (a filter may hide some) and rebuild the dots.
     function refresh(reset) {
       items = [].filter.call(box.children, function (c) { return getComputedStyle(c).display !== "none"; });
+      aim = -1; said = -1; status.textContent = "";
       dots.innerHTML = "";
-      items.forEach(function (_, i) {
-        var d = el("button", "dot"); d.type = "button"; d.tabIndex = -1;
-        d.addEventListener("click", function () { go(i); });
-        dots.appendChild(d);
-      });
+      items.forEach(function () { dots.appendChild(el("span", "dot")); });
       ctl.hidden = items.length < 2;
       if (RAIL_MQ.matches) {
         // A focusable, named region so keyboard users can arrow-scroll it.
@@ -110,8 +133,23 @@
     }
     box.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onScroll, { passive: true });
-    prev.addEventListener("click", function () { go(cur - 1); });
-    next.addEventListener("click", function () { go(cur + 1); });
+    prev.addEventListener("click", function () { step(-1); });
+    next.addEventListener("click", function () { step(1); });
+    // A touch, click or wheel on the rail itself takes over from an arrow press
+    // still in flight.
+    ["pointerdown", "wheel"].forEach(function (t) { box.addEventListener(t, function () { aim = -1; }, { passive: true }); });
+    // Tabbing into the half-visible next card: bring that card fully in. The
+    // browser's own focus scroll only nudges it, and the snap then pulls the rail
+    // back. Keyboard focus only, so a tap or click on a peeking card's link isn't
+    // slid out from under the pointer. Compared with the real scroll position, not
+    // `cur`, so quick Tabs that land mid-scroll still end aligned.
+    box.addEventListener("focusin", function (e) {
+      if (!RAIL_MQ.matches || e.target === box) return;
+      try { if (!e.target.matches(":focus-visible")) return; } catch (_) { return; }
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].contains(e.target)) { aim = -1; go(i, true); return; }
+      }
+    });
     var onMq = function () { refresh(true); };
     if (RAIL_MQ.addEventListener) RAIL_MQ.addEventListener("change", onMq);
     else if (RAIL_MQ.addListener) RAIL_MQ.addListener(onMq);
@@ -137,7 +175,27 @@
         btn.textContent = open ? "Show fewer" : "Show " + extra + " more highlights";
         btn.setAttribute("aria-expanded", open ? "true" : "false");
       }
-      btn.addEventListener("click", function () { ul.classList.toggle("open"); label(); });
+      btn.addEventListener("click", function () {
+        var top = btn.getBoundingClientRect().top;
+        var open = ul.classList.toggle("open");
+        label();
+        if (open) {
+          // The new items appear above the toggle: move focus to the first one so
+          // keyboard and screen-reader users continue reading from there.
+          var first = ul.querySelector("li.xtra");
+          if (first) { first.tabIndex = -1; first.focus(); }
+        } else {
+          // Items above the toggle just collapsed: scroll by the same amount so
+          // the toggle stays where it was instead of jumping up under the nav.
+          var d = btn.getBoundingClientRect().top - top, root = document.documentElement;
+          if (Math.abs(d) > 1) {
+            var sb = root.style.scrollBehavior;
+            root.style.scrollBehavior = "auto"; // the page scrolls smoothly by default
+            window.scrollBy(0, d);
+            root.style.scrollBehavior = sb;
+          }
+        }
+      });
       label();
       ul.parentNode.insertBefore(btn, ul.nextSibling);
     });
@@ -205,10 +263,33 @@
     if (pr.code) links += '<a href="' + esc(pr.code) + '" target="_blank" rel="noopener">' + ICON.gh + " Source</a>";
     card.innerHTML =
       '<div class="card-top"><h3>' + esc(pr.name) + '</h3>' + (pr.badge ? '<span class="badge">' + esc(pr.badge) + "</span>" : "") + "</div>" +
-      '<p class="blurb">' + esc(pr.blurb) + "</p>" +
+      '<p class="blurb' + (pr.clampOnPhones ? " trim" : "") + '">' + esc(pr.blurb) + "</p>" +
       '<div class="tech">' + tech + "</div>" +
       '<div class="links">' + links + "</div>";
     return card;
+  }
+
+  // In a rail the fmu blurb is capped at six lines (CSS) so it doesn't stretch
+  // every card. Where another card makes the rail taller anyway (narrow phones,
+  // large text), let it run on into that room rather than stop above a gap.
+  // Re-measured a frame after the rail or any part of that card changes size
+  // (resize, rotation, fonts arriving, a filter), never inside the observer's
+  // own callback.
+  function fitClamped(box) {
+    var b = box && box.querySelector(".blurb.trim");
+    if (!b || !window.ResizeObserver) return;
+    var queued = false;
+    function fit() {
+      queued = false;
+      b.style.removeProperty("-webkit-line-clamp"); b.style.removeProperty("line-clamp");
+      if (!RAIL_MQ.matches || !b.offsetHeight || !b.nextElementSibling) return;
+      var cs = getComputedStyle(b), lh = parseFloat(cs.lineHeight), n = parseInt(cs.getPropertyValue("-webkit-line-clamp"), 10);
+      var gap = parseFloat(getComputedStyle(b.parentNode).rowGap) || 0;
+      var more = Math.floor((b.nextElementSibling.getBoundingClientRect().top - b.getBoundingClientRect().bottom - gap) / lh);
+      if (n > 0 && more > 0) { b.style.setProperty("-webkit-line-clamp", String(n + more)); b.style.setProperty("line-clamp", String(n + more)); }
+    }
+    var ro = new ResizeObserver(function () { if (!queued) { queued = true; requestAnimationFrame(fit); } });
+    [box].concat([].slice.call(b.parentNode.children)).forEach(function (n) { ro.observe(n); });
   }
 
   function renderWork() {
@@ -221,14 +302,7 @@
         grid.querySelectorAll(".card").forEach(function (c) {
           c.style.display = (cat === "All" || c.getAttribute("data-cat") === cat) ? "" : "none";
         });
-        // On phones the chips are one scrolling row: keep the chosen one in view,
-        // and restart the swipe rail from its first (still visible) card.
-        if (RAIL_MQ.matches) {
-          var fl = filters.getBoundingClientRect(), br = b.getBoundingClientRect();
-          if (br.left < fl.left || br.right > fl.right) {
-            filters.scrollTo({ left: filters.scrollLeft + br.left - fl.left - (fl.width - br.width) / 2, behavior: reduce ? "auto" : "smooth" });
-          }
-        }
+        // On phones, restart the swipe rail from its first (still visible) card.
         rail.refresh(true);
       });
       filters.appendChild(b);
@@ -236,6 +310,7 @@
     var ordered = S.projects.slice().sort(function (x, y) { return (y.featured ? 1 : 0) - (x.featured ? 1 : 0); });
     ordered.forEach(function (pr) { grid.appendChild(projectCard(pr)); });
     rail = makeRail(grid, { noun: "project", label: "Projects" });
+    fitClamped(grid);
     $("#allRepos").href = S.contact.github + "?tab=repositories";
   }
 
