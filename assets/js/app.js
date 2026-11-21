@@ -273,27 +273,33 @@
   // every card. Where another card makes the rail taller anyway (narrow phones,
   // large text), let it run on into that room rather than stop above a gap.
   // Re-measured a frame after the rail or any part of that card changes size
-  // (resize, rotation, fonts arriving, a filter), never inside the observer's
-  // own callback.
+  // (resize, rotation, fonts arriving), never inside the observer's own
+  // callback. Returns the fit itself so a filter can run it straight away.
   function fitClamped(box) {
     var b = box && box.querySelector(".blurb.trim");
-    if (!b || !window.ResizeObserver) return;
+    if (!b || !window.ResizeObserver) return function () {};
     var queued = false;
     function fit() {
       queued = false;
       b.style.removeProperty("-webkit-line-clamp"); b.style.removeProperty("line-clamp");
-      if (!RAIL_MQ.matches || !b.offsetHeight || !b.nextElementSibling) return;
+      var next = b.nextElementSibling;
+      if (!RAIL_MQ.matches || !b.offsetHeight || !next) return;
       var cs = getComputedStyle(b), lh = parseFloat(cs.lineHeight), n = parseInt(cs.getPropertyValue("-webkit-line-clamp"), 10);
-      var gap = parseFloat(getComputedStyle(b.parentNode).rowGap) || 0;
-      var more = Math.floor((b.nextElementSibling.getBoundingClientRect().top - b.getBoundingClientRect().bottom - gap) / lh);
+      // the room is what the tags' auto top margin takes up: the space between
+      // the two, less the card's gap and the blurb's own bottom margin (zero
+      // here, but text-spacing tools set one on every paragraph)
+      var room = next.getBoundingClientRect().top - b.getBoundingClientRect().bottom -
+        (parseFloat(getComputedStyle(b.parentNode).rowGap) || 0) - (parseFloat(cs.marginBottom) || 0);
+      var more = Math.floor(room / lh);
       if (n > 0 && more > 0) { b.style.setProperty("-webkit-line-clamp", String(n + more)); b.style.setProperty("line-clamp", String(n + more)); }
     }
     var ro = new ResizeObserver(function () { if (!queued) { queued = true; requestAnimationFrame(fit); } });
     [box].concat([].slice.call(b.parentNode.children)).forEach(function (n) { ro.observe(n); });
+    return fit;
   }
 
   function renderWork() {
-    var grid = $("#workGrid"), filters = $("#filters"), rail;
+    var grid = $("#workGrid"), filters = $("#filters"), rail, refit;
     S.categories.forEach(function (cat, i) {
       var b = el("button", "filter" + (i === 0 ? " active" : ""), esc(cat));
       b.addEventListener("click", function () {
@@ -302,15 +308,17 @@
         grid.querySelectorAll(".card").forEach(function (c) {
           c.style.display = (cat === "All" || c.getAttribute("data-cat") === cat) ? "" : "none";
         });
-        // On phones, restart the swipe rail from its first (still visible) card.
+        // On phones, restart the swipe rail from its first (still visible) card,
+        // and re-fit the fmu blurb now so the new set's first frame is right.
         rail.refresh(true);
+        refit();
       });
       filters.appendChild(b);
     });
     var ordered = S.projects.slice().sort(function (x, y) { return (y.featured ? 1 : 0) - (x.featured ? 1 : 0); });
     ordered.forEach(function (pr) { grid.appendChild(projectCard(pr)); });
     rail = makeRail(grid, { noun: "project", label: "Projects" });
-    fitClamped(grid);
+    refit = fitClamped(grid);
     $("#allRepos").href = S.contact.github + "?tab=repositories";
   }
 
