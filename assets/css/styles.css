@@ -470,12 +470,15 @@ footer .socials { display: flex; gap: 0.8rem; }
   .rail-btn[aria-disabled="true"] { cursor: default; border-color: var(--line); background: transparent; }
   .rail-btn[aria-disabled="true"] svg { opacity: 0.35; }
   /* position dots: a 16px pitch that closes up to 10px on narrow screens; they
-     wrap only when even that doesn't fit (a phone zoomed to about 150% or more) */
+     wrap only when even that doesn't fit (a phone zoomed to about 150% or more).
+     The current dot starts from the same 10px as the rest and takes the spare
+     room first (up to 26px), and its pill is sized off that room, so the rows
+     break in the same places whichever card is showing, mid-animation too */
   .rail-dots { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; min-width: 0; }
   .rail-dots .dot { flex: 1 0 10px; width: 16px; max-width: 16px; height: 24px; display: grid; place-items: center; }
   .rail-dots .dot::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: rgba(29,26,21,0.55); transition: width .25s var(--ease), background .25s; }
-  .rail-dots .dot.on { flex: 0 0 26px; width: 26px; max-width: none; }
-  .rail-dots .dot.on::before { width: 18px; background: var(--violet); }
+  .rail-dots .dot.on { flex: 100 0 10px; width: 26px; max-width: 26px; }
+  .rail-dots .dot.on::before { width: max(10px, min(18px, 100% - 4px)); background: var(--violet); }
 
   .filters { margin-bottom: 0.75rem; }
   .card { padding: 1.3rem; }
