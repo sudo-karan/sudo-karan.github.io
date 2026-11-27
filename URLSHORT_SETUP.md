@@ -207,6 +207,9 @@ million cells, so this keeps a flood of visits from ever filling it. Two full ta
   permissions it asks for (this `Code.gs` needs more than the old one did), then **Deploy →
   Manage deployments → ✎ Edit → Version: New version → Deploy**. Until then no code is
   emailed to anyone: the page asks in a way an older script ignores.
+- **If every new link gets "Something went wrong on the server"** right after the site's key
+  pair was changed, `PRIVATE_KEY` and the page's `SITE_KEY` don't match yet: retry the latest
+  deployment (see the rotation steps in [`CONTACT_FORM_SETUP.md`](CONTACT_FORM_SETUP.md)).
 - **If every code is accepted but making a link then asks for a new code,** the two
   `URLSHORT_GATE_SECRET` values (Cloudflare and the Apps Script) aren't the same. Copy one into
   the other, and retry the latest deployment if you changed Cloudflare's.

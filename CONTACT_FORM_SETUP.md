@@ -50,10 +50,17 @@ every message to a **Google Sheet** and **emails** you.
 The RSA keypair for this site is already generated — the **public** key is committed
 in `data.js`; the **private** key was handed over separately to paste into the
 Cloudflare `PRIVATE_KEY` env var. To rotate it, generate a new pair (Web Crypto
-`RSA-OAEP`, 2048, SHA-256; export public as SPKI base64, private as PKCS8 base64), and put
-the new public key in **both** `data.js` (`contact.publicKey`) and `assets/js/urlshort.js`
-(`SITE_KEY`), in the same commit as the new `PRIVATE_KEY`, so neither form is left sealing
-for a key the Function no longer holds.
+`RSA-OAEP`, 2048, SHA-256; export public as SPKI base64, private as PKCS8 base64), then, in
+this order:
+1. Set the new `PRIVATE_KEY` in Cloudflare. The live deployment keeps the old one until the
+   next deployment, so nothing breaks yet.
+2. Straight away, push one commit that puts the new public key in **both** `data.js`
+   (`contact.publicKey`) and `assets/js/urlshort.js` (`SITE_KEY`). Its deployment is the first
+   with both new halves.
+3. If the secret was set after that deployment started, retry it (**Deployments → ⋯ → Retry
+   deployment**). Until both halves match, the link shortener answers "Something went wrong on
+   the server" to every new link, while the contact form quietly uses its fallback path. A tab
+   left open from before needs a reload.
 
 ---
 
