@@ -9,17 +9,15 @@ pages_build_output_dir = "."
 
 # Link shortener storage (karan98.in/urlshort; see URLSHORT_SETUP.md). Bindings
 # for this project must be declared here: with this file present, Cloudflare
-# ignores bindings added in the dashboard. Create a KV namespace, then uncomment
-# and paste its ID. Never commit a made-up ID: the deploy would fail.
-# [[kv_namespaces]]
-# binding = "URLSHORT"
-# id = ""
+# ignores bindings added in the dashboard. The namespace "urlshort" holds the links.
+[[kv_namespaces]]
+binding = "URLSHORT"
+id = "cb745478e28f4cf894006b1c322c49b2"
 
 # The link shortener's event log (links made and deleted, every visit), which the
-# Apps Script pulls into Google Sheets; see URLSHORT_SETUP.md. Optional: without it
-# nothing is logged and the shortener works the same. Create a D1 database named
-# urlshort-log, then uncomment and paste its ID. Never commit a made-up ID.
-# [[d1_databases]]
-# binding = "URLSHORT_DB"
-# database_name = "urlshort-log"
-# database_id = ""
+# Apps Script pulls into Google Sheets; see URLSHORT_SETUP.md. Without it nothing
+# is logged and the shortener works the same.
+[[d1_databases]]
+binding = "URLSHORT_DB"
+database_name = "urlshort-log"
+database_id = "9c412919-477c-484b-b1ce-9b84f4a37a54"
