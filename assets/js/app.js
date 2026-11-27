@@ -203,7 +203,7 @@
 
   function renderNav() {
     var nl = $("#navLinks");
-    S.nav.forEach(function (n) { nl.appendChild(a("#" + n.id, "", esc(n.label))); });
+    S.nav.forEach(function (n) { nl.appendChild(a(n.href || "#" + n.id, "", esc(n.label))); });
     nl.appendChild(a(S.contact.resume, "btn primary", "Résumé", true));
     $("#year").textContent = "2026";
     var fs = $("#footerSocials");

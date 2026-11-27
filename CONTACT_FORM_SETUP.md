@@ -39,6 +39,8 @@ every message to a **Google Sheet** and **emails** you.
 | `PHD_WHITELIST` | Apps Script property only (the PhD explorer's sign-in, below) | **no** |
 | `PHD_GATE_SECRET` | Apps Script property, and the explorer's Cloudflare env `PHD_GATE_SECRET` (same value, not ICTD's) | **no** |
 | `URLSHORT_KEY` | Cloudflare secret on this project: the link shortener's owner key ([`URLSHORT_SETUP.md`](URLSHORT_SETUP.md)) | **no** |
+| `URLSHORT_WHITELIST` | Apps Script property only: the addresses allowed to make short links | **no** |
+| `URLSHORT_GATE_SECRET` | Apps Script property, and a Cloudflare secret on this project (same value, not ICTD's or PhD's): signs the shortener's email passes and its log key | **no** |
 
 > The Function only reads **`PRIVATE_KEY`** now. The old `TURNSTILE_SECRET` /
 > `APPS_SCRIPT_URL` / `SHARED_SECRET` Cloudflare env vars are **unused** (harmless to
@@ -79,6 +81,9 @@ Cloudflare `PRIVATE_KEY` env var. To rotate it, generate a new pair (Web Crypto
      newline-separated, compared lower-case. See the last section.
    - `PHD_GATE_SECRET` — another long random string, not the map's; **must match** the
      explorer's Cloudflare env `PHD_GATE_SECRET`. See the last section.
+   - `URLSHORT_WHITELIST`, `URLSHORT_GATE_SECRET` and the optional `URLSHORT_PASS_HOURS` —
+     for the link shortener's makers and its log; see [`URLSHORT_SETUP.md`](URLSHORT_SETUP.md)
+     (which also has you run `installShortLinkSync` once).
 4. **Deploy → New deployment → Web app** — *Execute as:* **Me**, *Who has access:*
    **Anyone** → run `doPost` once, **Allow** all permissions → copy the **`/exec`** URL.
 

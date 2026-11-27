@@ -56,6 +56,7 @@ window.SITE = {
     { id: "experience", label: "Experience" },
     { id: "research", label: "Research" },
     { id: "contact", label: "Contact" },
+    { href: "/urlshort", label: "Short links" },   // a page of its own, not a section here
   ],
 
   // "Building now" — the in-progress flagship, featured boldly near the top.
