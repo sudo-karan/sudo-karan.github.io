@@ -74,15 +74,29 @@ function isOwnPath(pathname) {
 
 // The shortener's page has one address. _headers keeps other sites from framing it,
 // but its rules match the path exactly as sent, while the file is found after decoding
-// it: /%75rlshort, //urlshort or /x/..%2furlshort reach the same page without those
-// headers (or, proxied, as the mirror's copy). So every spelling of it redirects to
-// /urlshort itself.
+// it: /%75rlshort, //urlshort, /x/..%2furlshort or /urlshort.html%2f. reach the same
+// page without those headers (or, proxied, as the mirror's copy). So every spelling of
+// it redirects to /urlshort itself. The path is resolved twice: segment by segment, as
+// the file lookup does (it drops "." and a trailing "/."), and by URL rules, as a
+// browser would. A path the URL parser refuses (a tab after the first slash, say) is
+// simply not an alias: nothing here may throw, or every such request would be a 500.
+const URLSHORT_PATH = /^\/urlshort(?:\.html)?$/i;
 function isUrlshortAlias(url) {
   if (url.pathname === "/urlshort") return false;
   let p = url.pathname;
   try { p = decodeURIComponent(p); } catch (e) { /* keep it as sent */ }
-  p = new URL(p.replace(/[\\/]+/g, "/"), url.origin).pathname;   // "\" is "/", and ".." is resolved
-  return /^\/urlshort(?:\/|\.html)?$/i.test(p);
+  const segs = [];
+  for (const s of p.split(/[\\/]+/)) {
+    if (s === "..") segs.pop();
+    else if (s && s !== ".") segs.push(s);
+  }
+  if (URLSHORT_PATH.test("/" + segs.join("/"))) return true;
+  try {
+    const q = new URL(p.replace(/[\t\n\r]/g, "").replace(/[\\/]+/g, "/"), url.origin).pathname;
+    return URLSHORT_PATH.test(q.replace(/\/$/, ""));
+  } catch (e) {
+    return false;
+  }
 }
 
 export async function onRequest(context) {
