@@ -373,6 +373,7 @@ button { cursor: pointer; }
   transition: color .2s, text-decoration-color .2s;
 }
 .text-btn:hover { color: var(--violet-deep); text-decoration-color: currentColor; }
+.text-btn.is-busy { cursor: progress; }
 .text-btn .i { width: 1rem; height: 1rem; }
 
 /* where the owner key in use lives, with a way to drop it */
@@ -539,9 +540,13 @@ button { cursor: pointer; }
 .r-short .code { font-family: var(--serif); font-style: normal; font-weight: 600; font-variant-numeric: lining-nums; font-size: 1.3rem; color: var(--violet); }
 .r-short:hover .code { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.14em; }
 /* age · expiry · destination; the destination takes a line of its own when the row is narrow */
-.r-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.6rem; min-width: 0; margin-top: 0.15rem; font-size: 0.82rem; color: var(--ink-3); }
+.r-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.6rem; min-width: 0; margin-top: 0.15rem; font-size: 0.82rem; color: var(--ink-3); overflow: hidden; }
 .r-time, .r-exp { flex: none; font-size: 0.66rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; }
-.r-time + .r-exp::before { content: "·"; content: "·" / ""; margin-right: 0.6rem; letter-spacing: 0; }
+/* the dot sits in the gap before the expiry: when the expiry starts a line of its own, it
+   falls outside the line and is clipped away. Above the row link's overlay, like the
+   destination, so its tooltip (the exact time) shows. */
+.r-exp { position: relative; z-index: 1; }
+.r-time + .r-exp::before { content: "·"; content: "·" / ""; position: absolute; left: -0.6rem; width: 0.6rem; text-align: center; letter-spacing: 0; }
 .r-exp.is-expired { color: var(--danger); }
 /* an expired link no longer leads anywhere: its code fades back */
 .r-item.is-expired .r-short .code { color: var(--ink-3); }

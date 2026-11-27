@@ -55,6 +55,7 @@
     signInOff: 'Signing in by email isn’t switched on yet.',
     quota: 'No more sign-in codes can be sent today. Please try again tomorrow.',
     signInOffline: 'Couldn’t reach the sign-in service. Check your connection and try again.',
+    sendFailed: 'Couldn’t send a code just now. Please try again.',
     signInFailed: 'Couldn’t sign you in just now. Please try again.',
     signToDelete: 'Sign in to finish deleting the link.',
     passExpired: 'Your sign-in has run out. Send a new code to carry on.',
@@ -406,17 +407,17 @@
   }
   var lastPreset = TTL_DEFAULT;   // what Custom starts from: the length chosen before it
   // "Never" is the owner key's: shown while that is in use or being asked for. Losing it
-  // while chosen (Forget key, say) falls back to 24 hours, and says so.
-  function syncNever() {
+  // while chosen (Forget key, say) falls back to 24 hours, and says so; `quiet` at load,
+  // where a browser may have brought back a choice the page no longer offers.
+  function syncNever(quiet) {
     var on = !!memKey || (keyOpen() && mode === 'key');
     ttlChips.classList.toggle('has-never', on);
-    if (neverChip.hidden === !on) return;
     neverChip.hidden = !on;
     if (on || !neverIn.checked) return;
     defaultIn.checked = true;
     lastPreset = TTL_DEFAULT;
     syncCustom();
-    setError('ttl', MSG.neverGone, 'calm', null);
+    if (!quiet) setError('ttl', MSG.neverGone, 'calm', null);
   }
   // in words that read well: 10 minutes, 60 minutes, 24 hours, 7 days
   function prefillCustom() {
@@ -636,7 +637,12 @@
   }
   function tooManyCodes(m) {
     var n = typeof m === 'number' && isFinite(m) && m >= 1 ? Math.ceil(m) : 60;
-    return 'Too many codes have been asked for that address. Try again in ' + (n === 1 ? 'a minute' : 'about ' + n + ' minutes') + '.';
+    return 'Too many codes have been asked for that address. Try again in ' +
+      (n === 1 ? 'a minute' : n >= 60 ? 'an hour' : 'about ' + n + ' minutes') + '.';
+  }
+  // a code request that failed: no answer at all, or something that wasn't one
+  function codeTrouble(err, sending) {
+    return err && err.message === 'no answer' ? (sending ? MSG.sendFailed : MSG.signInFailed) : MSG.signInOffline;
   }
   // Asks for a code. Every answer takes a few seconds by design, and a code is said to be
   // on its way whether or not the address is on the list: nothing here tells who is.
@@ -653,14 +659,15 @@
     jsonp({ app: 'urlshort', action: 'send-otp', email: email }).then(function (r) {
       var to = stillHere() ? undefined : null;
       setSigning(null);
+      if (!keyOpen()) return;   // done another way meanwhile (the owner key, say): nothing to say
       if (r.ok === true) { codeSent(email); return; }
       if (r.reason === 'bad-email') { resetCode(); setError('email', MSG.badEmail, '', to); return; }
       setError(where, r.reason === 'rate-limit' ? tooManyCodes(r.retryMins) : r.reason === 'quota' ? MSG.quota :
-        r.reason === 'not-set-up' ? MSG.signInOff : MSG.signInFailed, 'say', to);
-    }, function () {
+        r.reason === 'not-set-up' ? MSG.signInOff : MSG.sendFailed, 'say', to);
+    }, function (err) {
       var to = stillHere() ? undefined : null;
       setSigning(null);
-      setError(where, MSG.signInOffline, 'say', to);
+      if (keyOpen()) setError(where, codeTrouble(err, true), 'say', to);
     });
   }
   function codeSent(email) {
@@ -684,6 +691,8 @@
     jsonp({ app: 'urlshort', action: 'verify-otp', email: email, code: code }).then(function (r) {
       var here = stillHere(), to = here ? undefined : null, again = here ? resendBtn : null;
       setSigning(null);
+      // signed in another way meanwhile (the owner key, say): that one stays
+      if (!keyOpen()) return;
       var p = r.verified === true ? readPass(r.token) : null;
       if (p && p.email === email) { signedIn(p, here); return; }
       var left = typeof r.triesLeft === 'number' && isFinite(r.triesLeft) ? Math.max(0, Math.floor(r.triesLeft)) : -1;
@@ -696,10 +705,10 @@
       else if (r.reason === 'expired') setError('otp', MSG.codeExpired, 'say', again);
       else if (r.reason === 'too-many') setError('otp', MSG.tooManyTries, 'say', again);
       else setError('otp', r.reason === 'busy' ? MSG.signInBusy : r.reason === 'not-set-up' ? MSG.signInOff : MSG.signInFailed, 'say', to);
-    }, function () {
+    }, function (err) {
       var to = stillHere() ? undefined : null;
       setSigning(null);
-      setError('otp', MSG.signInOffline, 'say', to);
+      if (keyOpen()) setError('otp', codeTrouble(err, false), 'say', to);
     });
   }
   // A code was verified: keep the pass, fold the panel away, and carry on with what waited
@@ -958,8 +967,10 @@
     finishDelete();
   });
 
+  // (A code request being out holds nothing up here: the panel's own steps wait for it,
+  // and a key typed meanwhile is ready to use.)
   function submit() {
-    if (busy || signing) return;
+    if (busy) return;
     if (pendingDelete && !urlIn.value.trim()) { finishDelete(); return; }
     dropDelete();
     hideNote();
@@ -1637,6 +1648,7 @@
     for (var j = 0; j < ends.length; j++) paintExpiry(ends[j], ends[j].closest('li'));
   }, 60000);
 
+  syncNever(true);
   syncKeyUi();
   syncCustom();
   syncPaste();
