@@ -1,9 +1,13 @@
 /* ============================================================================
    Google Apps Script — contact form handler for karan98.in.
 
-   doPost accepts TWO request shapes so the form works on Cloudflare and GitHub Pages:
+   doPost accepts THREE request shapes so the form works on Cloudflare and GitHub Pages:
      1. { secret, fields, meta }  — forwarded by the Cloudflare Function (shared-secret).
-     2. { obf }  — obfuscated blob posted from the browser (Turnstile verified here).
+     2. { obf }  — obfuscated blob posted from the browser (Turnstile verified here): the
+        GitHub Pages fallback, and the Function's relay until it has RELAY_SECRET.
+     3. { sealed }  — the Function's relay, carried by the browser: encrypted and signed
+        with keys from RELAY_SECRET, which the page never sees (see openSealed). Turnstile
+        is verified here too. One that doesn't open is refused, and the owner is told.
 
    doGet is a JSONP endpoint for the optional email-OTP verification:
      ?action=send-otp&email=…&callback=…    → emails a 6-digit code
@@ -54,6 +58,9 @@
      RECIPIENT         - where to email submissions
      SHARED_SECRET     - must equal the Cloudflare Function's SHARED_SECRET env
      OBFUSCATION_KEY   - must equal OBF_KEY in the website's app.js (defaults below)
+     RELAY_SECRET      - must equal the Cloudflare Function's secret RELAY_SECRET; opens
+                         { sealed }. Set it here first (CONTACT_FORM_SETUP.md, "Sealed relay")
+     RELAY_SECRET_PREVIOUS - (only while rotating RELAY_SECRET) the old value, still accepted
      OTP_DAILY_CAP     - (optional) max verification codes/day (default 85); the rest
                          of Gmail's ~100/day stays reserved for message notifications
      SHEET_ID          - (optional) spreadsheet id; otherwise the bound sheet
@@ -112,8 +119,15 @@ function doPost(e) {
     if (body.secret != null) {
       if (!sharedSecret || body.secret !== sharedSecret) return out({ ok: false, error: 'unauthorized' });
       f = body.fields || {}; m = body.meta || {};
-    } else if (body.obf) {
-      var inner = JSON.parse(deob(body.obf, obfKey));
+    } else if (body.sealed != null || body.obf) {
+      // Both carry the same { token, fields, meta }; only the wrapping differs.
+      var inner;
+      if (body.sealed != null) {
+        inner = openSealed(body.sealed, relaySecrets(props));
+        if (!inner) { relayAlert(recipient, props); return out({ ok: false, error: 'bad-seal' }); }
+      } else {
+        inner = JSON.parse(deob(body.obf, obfKey));
+      }
       f = inner.fields || {}; m = inner.meta || {};
       if (turnstileSecret) {
         var resp = UrlFetchApp.fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
@@ -829,6 +843,125 @@ function installShortLinkSync() {
     if (t.getHandlerFunction() === 'syncShortLinks') ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('syncShortLinks').timeBased().everyMinutes(5).create();
+}
+
+/* ------------- the Cloudflare Function's sealed relay ({ sealed }) ------------- */
+
+// The Function adds what only a server knows (the IP address, and the place and network it
+// comes from) and hands the record to the browser to post here, because Google refuses
+// Cloudflare's own calls. It seals the record first with keys derived from RELAY_SECRET,
+// which only it and this script hold, so the browser carries it but can't read or change it.
+// Apps Script has HMAC-SHA256 but no AES, so the cipher is built from HMAC; seal() in
+// functions/api/contact.js is the other half:
+//   prk        = HMAC-SHA256(key RELAY_SALT, RELAY_SECRET)                    HKDF-Extract
+//   kEnc, kMac = HMAC-SHA256(prk, 'v1 enc' 0x01), HMAC-SHA256(prk, 'v1 mac' 0x01)
+//                                                                  HKDF-Expand, 32 bytes each
+//   block i    = HMAC-SHA256(kEnc, nonce, then i as 4 bytes big-endian)   the keystream
+//   ciphertext = the UTF-8 JSON XOR block 0, block 1, …
+//   tag        = HMAC-SHA256(kMac, 0x01, nonce, ciphertext): checked before anything is decrypted
+//   sealed     = base64(0x01, nonce (16 random bytes), ciphertext, tag (32 bytes))
+var RELAY_VERSION = 1;
+var RELAY_SALT = 'karan98.in contact relay';
+var RELAY_NONCE = 16;
+var RELAY_TAG = 32;
+
+// RELAY_SECRET, and RELAY_SECRET_PREVIOUS while a rotation is under way.
+function relaySecrets(props) {
+  return ['RELAY_SECRET', 'RELAY_SECRET_PREVIOUS'].map(function (name) {
+    return String(props.getProperty(name) || '').trim();
+  }).filter(function (s) { return s; });
+}
+
+// The { token, fields, meta } inside a sealed relay, or null: not one, altered on the way,
+// or sealed with a secret this script doesn't hold.
+function openSealed(sealed, secrets) {
+  if (typeof sealed !== 'string' || !secrets.length) return null;
+  var blob;
+  try { blob = Utilities.base64Decode(sealed); } catch (e) { return null; }
+  var end = blob.length - RELAY_TAG; // where the tag starts
+  if (end < 1 + RELAY_NONCE || (blob[0] & 0xff) !== RELAY_VERSION) return null;
+  var signed = [], tag = [];
+  for (var i = 0; i < end; i++) signed.push(blob[i]);
+  for (var t = end; t < blob.length; t++) tag.push(blob[t]);
+  for (var s = 0; s < secrets.length; s++) {
+    var keys = relayKeys(secrets[s]);
+    if (!sameBytes(Utilities.computeHmacSha256Signature(signed, keys.mac), tag)) continue;
+    try {
+      var rec = JSON.parse(Utilities.newBlob(relayDecrypt(signed, keys.enc)).getDataAsString('UTF-8'));
+      return rec && typeof rec === 'object' ? rec : null;
+    } catch (e2) {
+      return null;
+    }
+  }
+  return null;
+}
+
+// HKDF-SHA256, one 32-byte block for each key. The info strings are ASCII.
+function relayKeys(secret) {
+  var prk = Utilities.computeHmacSha256Signature(secret, RELAY_SALT, Utilities.Charset.UTF_8);
+  function expand(info) {
+    var msg = [];
+    for (var i = 0; i < info.length; i++) msg.push(info.charCodeAt(i));
+    msg.push(1);
+    return Utilities.computeHmacSha256Signature(msg, prk);
+  }
+  return { enc: expand('v1 enc'), mac: expand('v1 mac') };
+}
+
+// signed is 0x01, the nonce, then the ciphertext. The plaintext comes back as the signed
+// bytes (-128 to 127) that Apps Script takes.
+function relayDecrypt(signed, kEnc) {
+  var start = 1 + RELAY_NONCE;
+  var counter = signed.slice(1, start).concat([0, 0, 0, 0]);
+  var out = [], block = null;
+  for (var at = start; at < signed.length; at++) {
+    var j = (at - start) % 32;
+    if (j === 0) {
+      var n = (at - start) / 32;
+      for (var b = 0; b < 4; b++) counter[RELAY_NONCE + b] = toByte((n >>> (24 - 8 * b)) & 0xff);
+      block = Utilities.computeHmacSha256Signature(counter, kEnc);
+    }
+    out.push(toByte((signed[at] ^ block[j]) & 0xff));
+  }
+  return out;
+}
+
+function toByte(x) { return x > 127 ? x - 256 : x; }
+
+// Every byte is compared, whichever differ, so the time taken doesn't tell how much of a
+// tag was right.
+function sameBytes(a, b) {
+  if (a.length !== b.length) return false;
+  var d = 0;
+  for (var i = 0; i < a.length; i++) d |= (a[i] ^ b[i]) & 0xff;
+  return d === 0;
+}
+
+// A { sealed } that doesn't open is refused, and the sender can't know: the browser posts
+// it without reading the answer. Usually RELAY_SECRET here isn't the Function's, or is
+// missing, so say so by email, at most once every 6 hours. Anyone can post a made-up one,
+// and that is reported too.
+function relayAlert(recipient, props) {
+  console.error('doPost: a sealed relay did not open');
+  try {
+    var cache = CacheService.getScriptCache();
+    if (cache.get('relay_alert')) return;
+    cache.put('relay_alert', '1', 21600);
+    var why = relaySecrets(props).length
+      ? 'Its RELAY_SECRET (and RELAY_SECRET_PREVIOUS, if set) did not open it: the Cloudflare secret RELAY_SECRET holds another value, or the message was altered on the way.'
+      : 'This script has no RELAY_SECRET Script Property.';
+    MailApp.sendEmail({
+      to: recipient,
+      subject: 'karan98.in contact form: a message could not be opened',
+      body: 'A sealed message reached the contact form\'s Apps Script and could not be opened, ' +
+        'so it was neither saved nor emailed. Its sender was shown "Message sent".\n\n' + why + '\n\n' +
+        'If you have just set or changed RELAY_SECRET, give the Script Property and the Cloudflare ' +
+        'secret the same value, then retry the latest Cloudflare deployment ("Sealed relay" in ' +
+        'CONTACT_FORM_SETUP.md). Anyone can post a made-up message here, so if a test message ' +
+        'from the site arrives, nothing is wrong.\n\nThis notice is sent at most once every 6 hours.',
+      name: 'karan98.in contact form'
+    });
+  } catch (e) { /* the answer is the same either way */ }
 }
 
 /* ------------------------------- helpers --------------------------------- */

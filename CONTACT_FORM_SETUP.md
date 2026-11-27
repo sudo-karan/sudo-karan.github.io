@@ -8,21 +8,23 @@ It takes two paths automatically:
 |---|---|---|
 | Browser → Function | a hybrid-**encrypted** blob `{enc}` | *(no Function on this host)* |
 | IP / geo / ISP | derived **server-side** in the Function from `request.cf` (never gathered by the browser; no 3rd-party geo calls) | gathered client-side, then obfuscated |
-| Delivery to Apps Script | the Function returns an **obfuscated** blob; the **browser relays** it to Apps Script | browser posts the `{obf}` blob straight to Apps Script |
+| Delivery to Apps Script | the Function returns a **sealed** blob (encrypted and signed with `RELAY_SECRET`, which the page never sees); the **browser relays** it to Apps Script as `{sealed}` | browser posts the `{obf}` blob straight to Apps Script |
 | Turnstile verified in | the Apps Script (token relayed untouched) | the Apps Script |
 
 > **Why the browser relays it:** Google blocks Cloudflare's Worker egress IPs from
 > POSTing to an Apps Script web app (a 401 sign-in page). So the Function does the
-> server-only work (decrypt + add IP/geo) and hands an obfuscated blob back; the
+> server-only work (decrypt + add IP/geo) and hands a sealed blob back; the
 > **browser** — which Google *does* accept — posts it to Apps Script.
 
 Either way the Network tab shows only an **opaque blob**, and the Apps Script logs
 every message to a **Google Sheet** and **emails** you.
 
-> **Honesty:** client-side JS is public, so this defeats *casual* inspection, not a
-> determined reverse-engineer. The Cloudflare path still adds real value — IP/geo/ISP
-> are derived server-side (accurate, no visible lookup) and the `browser→Function`
-> hop is genuinely RSA-encrypted; the relayed blob and the fallback are obfuscation.
+> **Honesty:** client-side JS is public, so the GitHub Pages fallback's obfuscation
+> defeats only *casual* inspection. The Cloudflare path is real encryption on both
+> hops: the `browser→Function` hop is RSA-encrypted, and the relayed blob is sealed with
+> `RELAY_SECRET`, held only by the Function and the Apps Script (section 4), so nothing in
+> the page decodes the IP/geo/ISP the Function adds. Until `RELAY_SECRET` is set on
+> Cloudflare, the relayed blob is the older obfuscated one, readable with `OBF_KEY`.
 
 ---
 
@@ -33,7 +35,9 @@ every message to a **Google Sheet** and **emails** you.
 | Turnstile **secret key** | Apps Script property `TURNSTILE_SECRET` (verifies both paths) | no |
 | RSA **public key** | `assets/js/data.js` (`contact.publicKey`), and a copy in `assets/js/urlshort.js` (`SITE_KEY`): the link shortener seals its requests with it too | yes (by design) |
 | RSA **private key** | Cloudflare Function env `PRIVATE_KEY` — the **only** env var it needs; the link shortener's Function opens its sealed requests with it too | **no** |
-| `OBFUSCATION_KEY` | `OBF_KEY` in `app.js`, the Function, and Apps Script property (same value) | yes-ish (obscurity) |
+| `OBFUSCATION_KEY` | `OBF_KEY` in `app.js`, the Function, and Apps Script property (same value): the GitHub Pages fallback, and the Function's relay until `RELAY_SECRET` is set | yes-ish (obscurity) |
+| `RELAY_SECRET` | Cloudflare secret on this project, and Apps Script property (same value): seals the Function's relay (section 4) | **no** |
+| `RELAY_SECRET_PREVIOUS` | Apps Script property, only while `RELAY_SECRET` is being rotated (section 4) | **no** |
 | `ICTD_WHITELIST` | Apps Script property only (the Odisha forest map's sign-in, below) | **no** |
 | `ICTD_GATE_SECRET` | Apps Script property, and the map's Cloudflare env `ICTD_GATE_SECRET` (same value) | **no** |
 | `PHD_WHITELIST` | Apps Script property only (the PhD explorer's sign-in, below) | **no** |
@@ -42,7 +46,7 @@ every message to a **Google Sheet** and **emails** you.
 | `URLSHORT_WHITELIST` | Apps Script property only: the addresses allowed to make short links | **no** |
 | `URLSHORT_GATE_SECRET` | Apps Script property, and a Cloudflare secret on this project (same value, not ICTD's or PhD's): signs the shortener's email passes and its log key | **no** |
 
-> The Function only reads **`PRIVATE_KEY`** now. The old `TURNSTILE_SECRET` /
+> The Function reads only **`PRIVATE_KEY`** and **`RELAY_SECRET`** now. The old `TURNSTILE_SECRET` /
 > `APPS_SCRIPT_URL` / `SHARED_SECRET` Cloudflare env vars are **unused** (harmless to
 > leave, safe to delete) — Turnstile is verified in Apps Script and delivery goes
 > through the browser, so the Function never calls Apps Script.
@@ -80,6 +84,8 @@ this order:
    - `SHARED_SECRET` — any long random string; **must match** the Cloudflare env below.
    - `OBFUSCATION_KEY` — *(optional)* must match `OBF_KEY` in `app.js`; if omitted,
      the built-in default in `Code.gs` (which matches `app.js`) is used.
+   - `RELAY_SECRET` — opens the Function's sealed relay; **must match** the Cloudflare
+     secret of the same name, and is set here first. See section 4.
    - `OTP_DAILY_CAP` — *(optional)* max verification codes emailed per day (default
      **85**); the rest of Gmail's ~100/day stays reserved for message notifications.
    - `SHEET_ID` — *(optional)* the Sheet id; omit to use the bound Sheet.
@@ -102,6 +108,8 @@ this order:
 Cloudflare Pages → your project → **Settings → Environment variables** (Production
 **and** Preview):
 - `PRIVATE_KEY` — the RSA private key (PKCS8 base64) handed over separately.
+- `RELAY_SECRET` (type **Secret**) — the same value as the Apps Script property. Set it
+  only once the Apps Script side is live: see section 4.
 - `TURNSTILE_SECRET` — the Turnstile secret key.
 - `APPS_SCRIPT_URL` — the `/exec` URL from step 2.
 - `SHARED_SECRET` — the same value as the Apps Script property.
@@ -116,12 +124,81 @@ declares the project so `functions/` compiles.
 > wider header is written fresh. A single `FIELDS` list in `Code.gs` drives both the
 > Sheet columns and the email, so they always match.
 
+## 4. Sealed relay (`RELAY_SECRET`)
+The Function hands the browser the record it has enriched (the message, plus the IP
+address, place and ISP that Cloudflare sees) for the browser to post to the Apps Script.
+With `RELAY_SECRET` set on both sides, that blob is **sealed**: encrypted and signed with
+keys derived from a secret the page never sees. DevTools then shows only
+`{"ok":true,"sealed":"…"}`, which nothing in the page decodes. The browser can't change it
+either: the Apps Script refuses a blob whose signature doesn't match. Without
+`RELAY_SECRET` on Cloudflare, the Function sends the older `relay`, which anyone can decode
+with `OBF_KEY` from `app.js`.
+
+**Set it up once, in this order:**
+1. Make the secret: `openssl rand -hex 32`. Keep it out of the repository and the page.
+2. **The Apps Script first.** Paste this `Code.gs`, add the Script Property `RELAY_SECRET`
+   with the value, then **Deploy → Manage deployments → ✏️ Edit → Version: New version →
+   Deploy** (the `/exec` URL stays the same). This `Code.gs` still takes the older `{obf}`
+   relay, so nothing changes yet.
+3. **Then Cloudflare.** **Workers & Pages → sudo-karan-github-io → Settings → Variables and
+   Secrets → Add**, type **Secret**, name `RELAY_SECRET`, the same value, for
+   **Production** (and **Preview**, if you test the form on previews). Then redeploy: merge
+   the pull request, or **Deployments → ⋯ → Retry deployment** if it is merged already. A
+   secret reaches the Function only with the next deployment. (From a terminal:
+   `npx wrangler pages secret put RELAY_SECRET --project-name sudo-karan-github-io`, then
+   redeploy the same way.)
+4. **Check it.** On karan98.in, with DevTools → Network open, send yourself a message. The
+   answer from `/api/contact` is `{"ok":true,"sealed":"…"}`, with no `relay`; the POST to
+   `script.google.com` carries `{"sealed":"…"}`; the row and the email arrive as before.
+
+Merging the pull request before steps 2 and 3 is safe: until Cloudflare has
+`RELAY_SECRET`, the Function keeps sending the older relay, which every `Code.gs` takes.
+
+**Never set it on Cloudflare first.** An older `Code.gs`, or one without the property,
+can't open `{sealed}`, so the message is dropped, while the sender still sees "Message
+sent": the browser posts it without reading the Apps Script's answer. This `Code.gs`
+emails `RECIPIENT` when a sealed relay doesn't open (at most once every 6 hours; anyone can
+post a made-up one, so one such email alone may be noise), and logs an error on the Apps
+Script's **Executions** page each time.
+
+**Rotate it** if it may have leaked, or now and then:
+1. Make a new value: `openssl rand -hex 32`.
+2. In the Apps Script's Script properties, copy the current `RELAY_SECRET` into a new
+   property `RELAY_SECRET_PREVIOUS`, then set `RELAY_SECRET` to the new value. Properties are
+   read on every request, so this needs no new deployment, and the script now opens relays
+   sealed with either value.
+3. In Cloudflare, set `RELAY_SECRET` to the new value and retry the latest deployment.
+4. Send a test message. Once it arrives, delete `RELAY_SECRET_PREVIOUS`.
+
+Step 2 must come before step 3, or the messages sent in between are dropped. Whoever has
+an old secret can read the relays sealed with it that they captured, so rotating protects
+the messages that come after it.
+
+**The format** (`seal()` in `functions/api/contact.js`, `openSealed()` in `Code.gs`).
+Apps Script has HMAC-SHA256 but no AES or RSA, so the cipher is built from HMAC:
+- Keys: HKDF-SHA256 over `RELAY_SECRET` (whitespace around it trimmed, as UTF-8), salt
+  `karan98.in contact relay`; `kEnc` with info `v1 enc` and `kMac` with info `v1 mac`, 32
+  bytes each.
+- A random 16-byte nonce for each message. Keystream block *i* =
+  HMAC-SHA256(`kEnc`, nonce ‖ *i* as 4 bytes, big-endian); the ciphertext is the UTF-8 JSON
+  XOR the keystream.
+- Tag = HMAC-SHA256(`kMac`, `0x01` ‖ nonce ‖ ciphertext): encrypt-then-MAC. The Apps
+  Script compares it in constant time before decrypting anything.
+- `sealed` = base64(`0x01` ‖ nonce ‖ ciphertext ‖ tag).
+
+`tests/contact-relay.test.mjs` runs the real Function and the real `Code.gs`: the round
+trip, tampered blobs refused, the older relay still taken, rotation, and a second
+implementation written from this description. Run it with `node --test "tests/*.test.mjs"`
+(Node 22 or later, nothing to install).
+
 ---
 
 ## Verify
 - **On karan98.in** (Cloudflare): open DevTools → Network, submit the form. The POST
   to `/api/contact` should carry only an opaque `{enc:{k,iv,ct}}` — **no** readable
-  fields/meta, and **no** request to `ipwho.is`. A row appears in the Sheet with the
+  fields/meta, and **no** request to `ipwho.is`. Its answer is `{ok, sealed}`, and the
+  relay to `script.google.com` is `{sealed}`; a `relay` field instead means Cloudflare
+  doesn't have `RELAY_SECRET` yet (section 4). A row appears in the Sheet with the
   full field set including server-derived **IP / city / ISP / ASN / colo**; an email
   arrives at `RECIPIENT`.
 - **On sudo-karan.github.io** (mirror): the POST goes straight to the Apps Script as

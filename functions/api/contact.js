@@ -7,18 +7,24 @@
      1. RSA-decrypts the browser's { enc } payload with the private key,
      2. enriches it with IP / geo / ISP derived SERVER-SIDE from `request.cf`
         (so the browser never gathers geo and makes no third-party lookup),
-     3. hands the enriched payload back to the browser as an OBFUSCATED blob.
+     3. hands the enriched payload back to the browser SEALED: encrypted and
+        authenticated with keys derived from RELAY_SECRET, which only this Function
+        and the Apps Script hold. The browser carries it but can't read or alter it.
    The BROWSER then relays that blob to Apps Script (which it *can* reach). The
    Turnstile token is left untouched here and verified by Apps Script, so it stays
    single-use.
 
-   Env (Cloudflare Pages → Settings → Environment variables):
+   Env (Cloudflare Pages → Settings → Variables and Secrets):
      PRIVATE_KEY   RSA-OAEP private key, PKCS8 base64 (pairs with data.js publicKey)
+     RELAY_SECRET  a secret equal to the Apps Script property RELAY_SECRET; never in the
+                   page. Until it is set, the Function sends the older obfuscated relay,
+                   which anyone can decode with OBF_KEY from app.js. Set it only after
+                   Code.gs takes { sealed } (CONTACT_FORM_SETUP.md, "Sealed relay").
    (TURNSTILE_SECRET / APPS_SCRIPT_URL / SHARED_SECRET are no longer used.)
    ========================================================================== */
 
-// Must match OBF_KEY in assets/js/app.js and Code.gs — the browser relays this blob
-// to Apps Script, which de-obfuscates it with the same key.
+// The older relay, sent until RELAY_SECRET is set. Must match OBF_KEY in
+// assets/js/app.js and Code.gs, which de-obfuscates it with the same key.
 const OBF_KEY = "7Qp2xL9vRt4Ke1Zc8Nb3Ym6Wd5Hs0Ja";
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
@@ -30,12 +36,61 @@ function b64ToBytes(b64) {
   return arr;
 }
 
+function bytesToB64(bytes) {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+
 // XOR-then-base64, identical to app.js obfuscate() and reversible by Code.gs deob().
 function obfuscate(str) {
   const bytes = new TextEncoder().encode(str);
   let bin = "";
   for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i] ^ (OBF_KEY.charCodeAt(i % OBF_KEY.length) & 0xff));
   return btoa(bin);
+}
+
+/* ---- the sealed relay ----------------------------------------------------------
+   Apps Script has HMAC-SHA256 but no AES or RSA, so the cipher is built from HMAC;
+   Code.gs openSealed() is the other half.
+     prk        = HKDF-Extract(salt RELAY_SALT, RELAY_SECRET)               (SHA-256)
+     kEnc, kMac = HKDF-Expand(prk, "v1 enc", 32), HKDF-Expand(prk, "v1 mac", 32)
+     block i    = HMAC(kEnc, nonce ‖ i as 4 bytes, big-endian)   (the keystream)
+     ciphertext = UTF-8 JSON XOR block 0 ‖ block 1 ‖ …
+     tag        = HMAC(kMac, 0x01 ‖ nonce ‖ ciphertext)          (encrypt-then-MAC)
+     sealed     = base64(0x01 ‖ nonce ‖ ciphertext ‖ tag), nonce = 16 random bytes */
+const RELAY_VERSION = 1;
+const RELAY_SALT = "karan98.in contact relay";
+const NONCE_BYTES = 16;
+
+async function relayKeys(secret) {
+  const utf8 = new TextEncoder();
+  const ikm = await crypto.subtle.importKey("raw", utf8.encode(secret), "HKDF", false, ["deriveBits"]);
+  async function hmacKey(info) {
+    const raw = await crypto.subtle.deriveBits({ name: "HKDF", hash: "SHA-256", salt: utf8.encode(RELAY_SALT), info: utf8.encode(info) }, ikm, 256);
+    return crypto.subtle.importKey("raw", raw, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  }
+  return { enc: await hmacKey("v1 enc"), mac: await hmacKey("v1 mac") };
+}
+
+async function seal(str, secret) {
+  const keys = await relayKeys(secret);
+  const pt = new TextEncoder().encode(str);
+  const nonce = crypto.getRandomValues(new Uint8Array(NONCE_BYTES));
+  const start = 1 + NONCE_BYTES; // where the ciphertext starts
+  const out = new Uint8Array(start + pt.length + 32);
+  out[0] = RELAY_VERSION;
+  out.set(nonce, 1);
+  const counter = new Uint8Array(NONCE_BYTES + 4);
+  counter.set(nonce);
+  for (let i = 0, at = 0; at < pt.length; i++) {
+    new DataView(counter.buffer).setUint32(NONCE_BYTES, i); // big-endian
+    const block = new Uint8Array(await crypto.subtle.sign("HMAC", keys.enc, counter));
+    for (let j = 0; j < block.length && at < pt.length; j++, at++) out[start + at] = pt[at] ^ block[j];
+  }
+  const signed = out.subarray(0, start + pt.length);
+  out.set(new Uint8Array(await crypto.subtle.sign("HMAC", keys.mac, signed)), signed.length);
+  return bytesToB64(out);
 }
 
 async function hybridDecrypt(enc, pkcs8B64) {
@@ -108,9 +163,15 @@ export async function onRequestPost({ request, env }) {
   if (!meta.platform) meta.platform = p.platform;
   if (!meta.timezone) meta.timezone = cf.timezone || "";
 
-  // Hand the enriched payload back to the browser as an obfuscated blob; the browser
-  // relays it to Apps Script (which the Worker's own IP can't reach). Apps Script
-  // verifies the (untouched, single-use) Turnstile token from inside the blob.
-  const relay = obfuscate(JSON.stringify({ token: token, fields: fields, meta: meta }));
-  return json({ ok: true, relay: relay });
+  // Hand the enriched payload back to the browser sealed; the browser relays it to
+  // Apps Script (which the Worker's own IP can't reach). Apps Script verifies the
+  // (untouched, single-use) Turnstile token from inside the blob.
+  const payload = JSON.stringify({ token: token, fields: fields, meta: meta });
+  const secret = String(env.RELAY_SECRET || "").trim();
+  if (!secret) return json({ ok: true, relay: obfuscate(payload) }); // the older relay, until it's set
+  try {
+    return json({ ok: true, sealed: await seal(payload, secret) });
+  } catch (err) {
+    return json({ ok: false, error: "seal-failed" }); // the browser falls back to its own path
+  }
 }

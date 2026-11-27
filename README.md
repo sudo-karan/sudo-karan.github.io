@@ -47,6 +47,16 @@ make them, and every link made and every visit is logged to the contact form's G
 Sheet. It runs on Cloudflare Pages Functions with a KV namespace and a D1 database; see
 [`URLSHORT_SETUP.md`](URLSHORT_SETUP.md) for the one-time setup.
 
+## Tests
+
+```bash
+node --test "tests/*.test.mjs"
+```
+
+Node 22 or later, nothing to install. They run the real Functions and the real
+Apps Script code (`functions/apps-script/Code.gs`) against stand-ins for Cloudflare
+and Google.
+
 ## Local preview
 
 ```bash
