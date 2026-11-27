@@ -3,11 +3,17 @@
 
    Looks the code up in the URLSHORT KV namespace (written by /api/urlshort) and
    answers 302 to the saved URL. A 302, not a 301: browsers keep a 301 for good,
-   so a link the owner deletes would carry on working for anyone who had used it.
-   Codes are case-insensitive. Unknown codes get a small "no such link" page (404);
-   if KV itself fails, a "try again in a minute" page (503), so a link that still
-   exists is never reported as gone.
+   so a link that is deleted or expires would carry on working for anyone who had
+   used it. Codes are case-insensitive. Unknown codes get a small "no such link"
+   page (404), and links past the lifetime their maker chose an "expired" page
+   (410); if KV itself fails, a "try again in a minute" page (503), so a link that
+   still exists is never reported as gone.
+
+   Every request (GET and HEAD) is logged as a visit, through waitUntil after the
+   answer has gone (see functions/_lib/urlshort.js).
    ========================================================================== */
+
+import { logEvent } from "../_lib/urlshort.js";
 
 const CODE_RE = /^[a-z0-9-]{1,40}$/;
 
@@ -70,6 +76,11 @@ const NOT_FOUND = page("Link not found", "404", "This short link doesn’t lead 
   "It may have been mistyped, or removed by its owner. Check the address you were sent.",
   `<a class="btn" href="/">Go to karan98.in</a>`);
 
+// 410 rather than 404: the link did exist, and it won't be back.
+const EXPIRED = page("Link expired", "410", "This link has expired.",
+  "Short links on karan98.in last only as long as their maker chose. Ask whoever sent it for a new one.",
+  `<a class="btn" href="/">Go to karan98.in</a>`);
+
 // href="" reloads this same address. (Nothing here can say whether the link exists:
 // the lookup itself failed.)
 const UNAVAILABLE = page("Try again shortly", "503", "This link can’t be opened just now.",
@@ -81,19 +92,26 @@ function htmlPage(method, status, body, extra) {
   return new Response(method === "HEAD" ? null : body, { status: status, headers: Object.assign(headers, extra || {}) });
 }
 
-export async function onRequest({ request, env, params }) {
+export async function onRequest(context) {
+  const { request, env, params } = context;
   const method = request.method;
   if (method !== "GET" && method !== "HEAD") {
     return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
   }
   const code = String(params.code || "").toLowerCase();
-  let to = null;
+  const visit = (result, url, expires) => logEvent(context, { kind: "visit", code: code, url: url, result: result, expires: expires, actor: "" });
+  let rec = null;
   if (env.URLSHORT && CODE_RE.test(code)) {
-    try { to = await env.URLSHORT.get("s:" + code); }
-    catch (e) { return htmlPage(method, 503, UNAVAILABLE, { "Retry-After": "60" }); }
+    try { rec = await env.URLSHORT.getWithMetadata("s:" + code); }
+    catch (e) { visit("error"); return htmlPage(method, 503, UNAVAILABLE, { "Retry-After": "60" }); }
   }
+  const to = rec && rec.value;
   // Only ever an http(s) URL: /api/urlshort stores nothing else, and this keeps it so.
-  if (!to || !/^https?:\/\//i.test(to)) return htmlPage(method, 404, NOT_FOUND);
+  if (!to || !/^https?:\/\//i.test(to)) { visit("not-found"); return htmlPage(method, 404, NOT_FOUND); }
+  // x: when it stops working, in ms (0 for never). Links made before lifetimes have none.
+  const md = rec.metadata, ends = md && typeof md.x === "number" && md.x > 0 ? md.x : 0;
+  if (ends && Date.now() >= ends) { visit("expired", to, ends); return htmlPage(method, 410, EXPIRED); }
+  visit("redirect", to, ends);
   return new Response(null, {
     status: 302,
     headers: { Location: to, "Cache-Control": "no-store", "X-Robots-Tag": "noindex" },

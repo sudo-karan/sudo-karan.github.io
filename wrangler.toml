@@ -14,3 +14,12 @@ pages_build_output_dir = "."
 # [[kv_namespaces]]
 # binding = "URLSHORT"
 # id = ""
+
+# The link shortener's event log (links made and deleted, every visit), which the
+# Apps Script pulls into Google Sheets; see URLSHORT_SETUP.md. Optional: without it
+# nothing is logged and the shortener works the same. Create a D1 database named
+# urlshort-log, then uncomment and paste its ID. Never commit a made-up ID.
+# [[d1_databases]]
+# binding = "URLSHORT_DB"
+# database_name = "urlshort-log"
+# database_id = ""
