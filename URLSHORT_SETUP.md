@@ -44,10 +44,11 @@ contact form) to be added.
 2. **Create the D1 database** (the log).
    - Open **Storage & Databases → D1 SQL Database → Create**, and name it `urlshort-log`.
    - Copy its **ID** (a UUID). Its table is created the first time something is logged.
-3. **Bind both in `wrangler.toml`.**
+3. **Bind both in `wrangler.toml`** (done: the IDs of `urlshort` and `urlshort-log` are in
+   the file. Redo this only if you recreate either one).
    - `wrangler.toml` is this project's source of truth for bindings. While it exists,
      Cloudflare ignores bindings added in the dashboard, so the bindings must go in the file.
-   - Uncomment the two blocks at the end of the file and paste the IDs:
+   - The two blocks at the end of the file hold the IDs:
      ```toml
      [[kv_namespaces]]
      binding = "URLSHORT"
@@ -65,8 +66,8 @@ contact form) to be added.
      type **Secret**, for **Production**:
      - `URLSHORT_KEY`: your owner key, a long random string (from a password manager, or
        `openssl rand -base64 24`).
-     - `URLSHORT_GATE_SECRET`: another long random string. It must differ from the forest map's
-       and the PhD explorer's gate secrets.
+     - `URLSHORT_GATE_SECRET`: another long random string (`openssl rand -hex 32`). It must
+       differ from the forest map's and the PhD explorer's gate secrets.
    - Links can only be made or deleted at karan98.in itself: pull-request previews and older
      deployments at `*.pages.dev` addresses refuse to.
 5. **Set up the Apps Script** (the contact form's: open the Sheet → **Extensions → Apps Script**).
@@ -180,6 +181,11 @@ million cells, so this keeps a flood of visits from ever filling it. Two full ta
 - **If you ever delete and recreate the D1 database,** also delete the Script Property
   `urlshort_log_last` in the Apps Script. It remembers how far the Sheet has got, and a new
   database counts from 1 again, so without the reset its first events would be skipped.
+- **If the page says "Signing in by email isn't switched on yet",** the Apps Script doesn't
+  have this `Code.gs` yet (paste it, then **Deploy → Manage deployments → ✎ Edit → Version:
+  New version → Deploy**), or its `URLSHORT_GATE_SECRET` is missing or the same as another
+  gate's. Until then no code is emailed to anyone: the page asks in a way an older script
+  ignores.
 - **If every code is accepted but making a link then asks for a new code,** the two
   `URLSHORT_GATE_SECRET` values (Cloudflare and the Apps Script) aren't the same. Copy one into
   the other, and retry the latest deployment if you changed Cloudflare's.

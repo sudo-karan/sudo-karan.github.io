@@ -669,10 +669,13 @@
     if (email.length > 254 || !EMAIL_RE.test(email)) { setError('email', MSG.badEmail); return; }
     setSigning(again ? resendBtn : sendBtn);
     announce('Sending a code…');
-    jsonp({ app: 'urlshort', action: 'send-otp', email: email }).then(function (r) {
+    // send-code, not send-otp: a script from before the shortener doesn't know it, so it
+    // sends nothing (see urlshortAnswer in Code.gs), and its answer has no app: 'urlshort'
+    jsonp({ app: 'urlshort', action: 'send-code', email: email }).then(function (r) {
       var to = stillHere() ? undefined : null;
       setSigning(null);
       if (!keyOpen()) return;   // done another way meanwhile (the owner key, say): nothing to say
+      if (r.app !== 'urlshort') { setError(where, MSG.signInOff, 'say', to); return; }
       if (r.ok === true) { codeSent(email); return; }
       if (r.reason === 'bad-email') { resetCode(); setError('email', MSG.badEmail, '', to); return; }
       setError(where, r.reason === 'rate-limit' ? tooManyCodes(r.retryMins) : r.reason === 'quota' ? MSG.quota :
@@ -701,11 +704,12 @@
     var email = sentTo;
     setSigning(verifyBtn);
     announce('Checking the code…');
-    jsonp({ app: 'urlshort', action: 'verify-otp', email: email, code: code }).then(function (r) {
+    jsonp({ app: 'urlshort', action: 'check-code', email: email, code: code }).then(function (r) {
       var here = stillHere(), to = here ? undefined : null, again = here ? resendBtn : null;
       setSigning(null);
       // signed in another way meanwhile (the owner key, say): that one stays
       if (!keyOpen()) return;
+      if (r.app !== 'urlshort') { setError('otp', MSG.signInOff, 'say', to); return; }
       var p = r.verified === true ? readPass(r.token) : null;
       if (p && p.email === email) { signedIn(p, here); return; }
       var left = typeof r.triesLeft === 'number' && isFinite(r.triesLeft) ? Math.max(0, Math.floor(r.triesLeft)) : -1;

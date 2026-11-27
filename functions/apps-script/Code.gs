@@ -36,11 +36,12 @@
    It lets nobody in (not-set-up) if PHD_GATE_SECRET is missing or equals ICTD_GATE_SECRET.
 
    With &app=urlshort the same protocol as the PhD explorer's serves the link shortener
-   (karan98.in/urlshort, in this repository): codes go only to URLSHORT_WHITELIST, answers
-   don't say who is listed, and a right code gets { verified: true, token, exp }: the token
-   over { email, exp, aud: 'urlshort' }, signed with URLSHORT_GATE_SECRET, good for
-   URLSHORT_PASS_HOURS (default 24). Nobody gets one (not-set-up) if URLSHORT_GATE_SECRET is
-   missing or equals ICTD's or PhD's.
+   (karan98.in/urlshort, in this repository), under the action names send-code and
+   check-code, and every answer carries app: 'urlshort' (see urlshortAnswer): codes go only
+   to URLSHORT_WHITELIST, answers don't say who is listed, and a right code gets
+   { verified: true, token, exp }: the token over { email, exp, aud: 'urlshort' }, signed
+   with URLSHORT_GATE_SECRET, good for URLSHORT_PASS_HOURS (default 24). Nobody gets one
+   (not-set-up) if URLSHORT_GATE_SECRET is missing or equals ICTD's or PhD's.
    syncShortLinks() pulls the shortener's log (links made and deleted, every visit) from
    https://karan98.in/api/urlshort/log into the "Short links" and "Link visits" sheets;
    installShortLinkSync() runs it every 5 minutes.
@@ -552,10 +553,18 @@ function phdVerify(email, code) {
 var URLSHORT_APP = 'urlshort';
 var URLSHORT_NS = 'urlshort_'; // cache-key prefix: the shortener's codes and hourly limits
 
+// The page asks with send-code and check-code, not send-otp and verify-otp. A script from
+// before the shortener (not updated yet, or rolled back) would hand those two on to the
+// contact form's codes and email anyone a code that signs nobody in; these names it doesn't
+// know, so it sends nothing and answers { ok: true, note: 'POST only' }. Every answer from
+// here carries app: 'urlshort' (listed or not, so it says nothing about the list), which is
+// how the page tells the two apart and says signing in isn't switched on yet.
 function urlshortAnswer(action, email, code) {
-  if (action === 'send-otp') return urlshortSend(email);
-  if (action === 'verify-otp') return urlshortVerify(email, code);
-  return { ok: true, note: 'POST only' };
+  var a = action === 'send-code' ? urlshortSend(email)
+    : action === 'check-code' ? urlshortVerify(email, code)
+    : { ok: false, reason: 'bad-request' };
+  a.app = URLSHORT_APP;
+  return a;
 }
 
 // Missing, blank, or the same as the map's or the explorer's: then nobody gets a pass.
