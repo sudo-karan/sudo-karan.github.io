@@ -4,6 +4,7 @@
    event log is functions/api/urlshort/log.js)
 
      POST   { url, slug?, rid?, ttl?, client? } → { ok, code, short, url, expires }
+            or that body sealed: { enc: { k, iv, ct } } (see unseal), which the page sends
      DELETE ?code=<code>                         → { ok }
 
    Who may write, by the Authorization header:
@@ -40,6 +41,9 @@
                            value as its Script Property), also an encrypted secret.
                            Changing it (and redeploying) signs everyone out.
      URLSHORT_DB           optional D1 binding for the event log (see the log).
+     PRIVATE_KEY           the contact form's RSA-OAEP private key (PKCS8, base64), which
+                           opens a sealed body. Without it a sealed body answers
+                           503 { error: "not-set-up" }; a plain one still works.
    Without the KV binding, or with neither secret, every call answers
    503 { error: "not-set-up" }.
 
@@ -216,10 +220,39 @@ async function makeCode(seed) {
   return out.join("");
 }
 
+// The page seals its request as the contact form does (hybridEncrypt in assets/js/app.js):
+// enc = { k, iv, ct } in base64, where k is a fresh AES-256-GCM key wrapped with RSA-OAEP
+// (SHA-256) for the site's public key, and ct is the JSON body under that key and iv. So a
+// browser's Network tab shows neither the link nor the device details. Only callers who have
+// already shown a key or pass get this far, so the RSA work can't be had for free. A plain
+// body is taken too (curl, say): sealing hides the details in the browser, it isn't a lock.
+const B64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
+let privKey = null, privKeySrc = "";
+async function unseal(enc, pkcs8B64) {
+  if (!enc || typeof enc !== "object") throw new Error("not sealed");
+  const { k, iv, ct } = enc;
+  const ok = (v, max) => typeof v === "string" && v.length <= max && B64_RE.test(v);
+  if (!ok(k, 1400) || !ok(iv, 32) || !ok(ct, 65536)) throw new Error("not sealed");
+  const bytes = b => Uint8Array.from(atob(b), c => c.charCodeAt(0));
+  if (privKeySrc !== pkcs8B64) {   // kept for the isolate's life: importing costs more than using
+    privKey = await crypto.subtle.importKey("pkcs8", bytes(pkcs8B64.replace(/\s+/g, "")), { name: "RSA-OAEP", hash: "SHA-256" }, false, ["decrypt"]);
+    privKeySrc = pkcs8B64;
+  }
+  const raw = await crypto.subtle.decrypt({ name: "RSA-OAEP" }, privKey, bytes(k));
+  const aes = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["decrypt"]);
+  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes(iv) }, aes, bytes(ct));
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+
 async function create(context, who) {
   const { request, env } = context;
   let body;
   try { body = await request.json(); } catch (e) { body = null; }
+  if (body && typeof body === "object" && !Array.isArray(body) && body.enc !== undefined) {
+    const key = secretOf(env.PRIVATE_KEY);
+    if (!key) return json({ ok: false, error: "not-set-up" }, 503);
+    try { body = await unseal(body.enc, key); } catch (e) { body = null; }
+  }
   if (!body || typeof body !== "object" || Array.isArray(body)) return json({ ok: false, error: "bad-request" }, 400);
 
   const u = normalizeUrl(body.url);

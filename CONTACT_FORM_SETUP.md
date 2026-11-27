@@ -31,8 +31,8 @@ every message to a **Google Sheet** and **emails** you.
 |---|---|---|
 | Turnstile **site key** | `assets/js/data.js` | yes (by design) |
 | Turnstile **secret key** | Apps Script property `TURNSTILE_SECRET` (verifies both paths) | no |
-| RSA **public key** | `assets/js/data.js` (`contact.publicKey`) | yes (by design) |
-| RSA **private key** | Cloudflare Function env `PRIVATE_KEY` — the **only** env var it needs | **no** |
+| RSA **public key** | `assets/js/data.js` (`contact.publicKey`), and a copy in `assets/js/urlshort.js` (`SITE_KEY`): the link shortener seals its requests with it too | yes (by design) |
+| RSA **private key** | Cloudflare Function env `PRIVATE_KEY` — the **only** env var it needs; the link shortener's Function opens its sealed requests with it too | **no** |
 | `OBFUSCATION_KEY` | `OBF_KEY` in `app.js`, the Function, and Apps Script property (same value) | yes-ish (obscurity) |
 | `ICTD_WHITELIST` | Apps Script property only (the Odisha forest map's sign-in, below) | **no** |
 | `ICTD_GATE_SECRET` | Apps Script property, and the map's Cloudflare env `ICTD_GATE_SECRET` (same value) | **no** |
@@ -50,7 +50,10 @@ every message to a **Google Sheet** and **emails** you.
 The RSA keypair for this site is already generated — the **public** key is committed
 in `data.js`; the **private** key was handed over separately to paste into the
 Cloudflare `PRIVATE_KEY` env var. To rotate it, generate a new pair (Web Crypto
-`RSA-OAEP`, 2048, SHA-256; export public as SPKI base64, private as PKCS8 base64).
+`RSA-OAEP`, 2048, SHA-256; export public as SPKI base64, private as PKCS8 base64), and put
+the new public key in **both** `data.js` (`contact.publicKey`) and `assets/js/urlshort.js`
+(`SITE_KEY`), in the same commit as the new `PRIVATE_KEY`, so neither form is left sealing
+for a key the Function no longer holds.
 
 ---
 

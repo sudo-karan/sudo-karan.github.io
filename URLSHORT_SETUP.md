@@ -16,10 +16,12 @@ flagged. Every link made or deleted, and every visit to one, is logged to your G
 | Owner key | the Cloudflare **secret** `URLSHORT_KEY` |
 | Email codes | the contact form's Apps Script (`app=urlshort`): allow list `URLSHORT_WHITELIST`, and the secret `URLSHORT_GATE_SECRET`, set both there and in Cloudflare |
 | The Sheet | the contact form's spreadsheet, in two tabs it adds: **Short links** and **Link visits** |
+| Sealing | the contact form's key pair: the page seals each new link's request with the public key (`SITE_KEY` in `assets/js/urlshort.js`, a copy of `contact.publicKey` in `data.js`), and the Function opens it with the contact form's Cloudflare secret `PRIVATE_KEY`, which is already set |
 
 Until the KV binding and at least one way in (the owner key, or the gate secret) exist, the page
-says the shortener isn't switched on yet. Without the D1 database, nothing is logged, and
-everything else works. The rest of the site is unaffected either way.
+says the shortener isn't switched on yet. It says so too if the contact form's `PRIVATE_KEY` is
+ever missing, since that opens the page's sealed requests. Without the D1 database, nothing is
+logged, and everything else works. The rest of the site is unaffected either way.
 
 ## Who can do what
 
@@ -115,6 +117,17 @@ and:
 - **Link visits** tab: every time a short link is opened: which link, whether it went through,
   had expired, or didn't exist, and the visitor's IP address, approximate place, network,
   browser, operating system, device type, language and the page they came from.
+
+**What a browser shows.** Everything travels over HTTPS, so nobody between a browser and the
+site can read it. The IP address, place, network and every visit are read by Cloudflare's server
+from the connection itself and go to the Sheet server to server, so they never pass through
+anyone's browser. When someone makes a link, the page seals the request (the link, its ending,
+the timer and the device details) as the contact form seals its messages: AES-256-GCM under a
+fresh key, which RSA-OAEP wraps for the site's public key. Their browser's Network tab then
+shows only `{"enc": …}`. What it still shows is theirs anyway: the email address and code they
+typed to sign in, their key or pass in the `Authorization` header, and the answer, which holds
+the short link and the long one they pasted. A browser without Web Crypto (none in current use)
+sends the request unsealed, over HTTPS all the same.
 
 The log holds personal data. Keep the Sheet private. The events wait in the D1 database until the
 Apps Script has copied them into the Sheet, and are deleted from D1 after that.

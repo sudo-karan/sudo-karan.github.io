@@ -10,6 +10,10 @@
   // The Apps Script that emails sign-in codes: contact.fallbackEndpoint in assets/js/data.js,
   // which this page doesn't load. Google sends no CORS headers, so it answers in JSONP.
   var CODE_SERVICE = 'https://script.google.com/macros/s/AKfycbx-6-WldWnNAUi5_32S-lzvAVF2ndzKoatiOGCeaAVbYQLNilbpnyMo2dE46pn7hXAO/exec';
+  // The site's public key: contact.publicKey in assets/js/data.js, which this page doesn't
+  // load either. A new link's request is sealed for it (see seal), as the contact form's
+  // messages are; its private half is the Cloudflare secret PRIVATE_KEY. Change both together.
+  var SITE_KEY = 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1JMTLtINAoNvbqmYU1L+5x1rkx9hhvmhlsbWeTEmoZtaAZHKCSWih2fBnqY5ug/Z5DYIM2bb5/jJ7/cFp42fuAtgLDYZ/N8cNcRZJ61Lm22wciD3li9U1fpGfKGzoq2NrjvPTWnYDPVErfR65/ROIBBq2AQU60JRqLyed3qWabKW7MlXHJ5KD8ea1aobhWYB6qSe9ETCHcMVscQCR3glQUlvAhN5Y9YGQzfhJ4ndOnA3KSnuG+Otptx6p5FY+ebvVZkhOyTs9u5wDy1fwc30aDgK/XCCidI76enj9nm+rXx47RcPMCo2fnc3IhpcOIqzjMMs5Uc1gmoA8nmYhSKk5QIDAQAB';
   var KEY_STORE = 'urlshort:key';
   var PASS_STORE = 'urlshort:pass';
   var RECENT_STORE = 'urlshort:recent';
@@ -855,6 +859,37 @@
   }
 
   /* ---- the API ---- */
+  // A new link's request is sealed as the contact form's messages are (hybridEncrypt in
+  // app.js): a fresh AES-256-GCM key encrypts the JSON, and RSA-OAEP wraps that key for
+  // SITE_KEY, which only the Function can open. The Network tab then shows { enc } and
+  // nothing of the link or of the device details. Without Web Crypto (or if sealing fails)
+  // the body goes as it is, over HTTPS all the same. Never rejects.
+  function toB64(buf) {
+    var a = new Uint8Array(buf), s = '';
+    for (var i = 0; i < a.length; i++) s += String.fromCharCode(a[i]);
+    return window.btoa(s);
+  }
+  function seal(body) {
+    return new Promise(function (resolve) {
+      try {
+        var c = window.crypto, subtle = c && c.subtle;
+        if (!subtle || typeof TextEncoder !== 'function') { resolve(body); return; }
+        var bin = window.atob(SITE_KEY), spki = new Uint8Array(bin.length), iv = c.getRandomValues(new Uint8Array(12)), aes;
+        for (var i = 0; i < bin.length; i++) spki[i] = bin.charCodeAt(i);
+        subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt'])
+          .then(function (key) { aes = key; return subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, new TextEncoder().encode(JSON.stringify(body))); })
+          .then(function (ct) {
+            return subtle.exportKey('raw', aes)
+              .then(function (raw) {
+                return subtle.importKey('spki', spki, { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['encrypt'])
+                  .then(function (pub) { return subtle.encrypt({ name: 'RSA-OAEP' }, pub, raw); });
+              })
+              .then(function (wrapped) { resolve({ enc: { k: toB64(wrapped), iv: toB64(iv), ct: toB64(ct) } }); });
+          })
+          .catch(function () { resolve(body); });
+      } catch (e) { resolve(body); }
+    });
+  }
   function request(method, url, k, body) {
     var ctrl = typeof AbortController === 'function' ? new AbortController() : null;
     var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 20000) : 0;
@@ -1022,7 +1057,7 @@
     if (slug) body.slug = slug;
     if (pending.rid) body.rid = pending.rid;
     setBusy(true);
-    request('POST', API, k, body).then(function (r) {
+    seal(body).then(function (sent) { return request('POST', API, k, sent); }).then(function (r) {
       setBusy(false);
       var d = r.data || {};
       if (r.status >= 200 && r.status < 300 && d.ok === true) {
