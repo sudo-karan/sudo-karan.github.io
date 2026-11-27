@@ -873,11 +873,11 @@
     return new Promise(function (resolve) {
       try {
         var c = window.crypto, subtle = c && c.subtle;
-        if (!subtle || typeof TextEncoder !== 'function') { resolve(body); return; }
+        if (!subtle || typeof window.TextEncoder !== 'function') { resolve(body); return; }
         var bin = window.atob(SITE_KEY), spki = new Uint8Array(bin.length), iv = c.getRandomValues(new Uint8Array(12)), aes;
         for (var i = 0; i < bin.length; i++) spki[i] = bin.charCodeAt(i);
         subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt'])
-          .then(function (key) { aes = key; return subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, new TextEncoder().encode(JSON.stringify(body))); })
+          .then(function (key) { aes = key; return subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, new window.TextEncoder().encode(JSON.stringify(body))); })
           .then(function (ct) {
             return subtle.exportKey('raw', aes)
               .then(function (raw) {
