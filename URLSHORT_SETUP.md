@@ -95,7 +95,11 @@ contact form) to be added.
      is live fail, and Google may email you about them; that's expected: HTTP 405 until the
      pull request is merged, then 503 or 401 until both secrets are set and match.
    - Then **Deploy → Manage deployments → ✎ Edit → Version: New version → Deploy.** The web
-     app's URL stays the same. (Approving first means the sign-in never runs without the
+     app's URL stays the same.
+   - **If the shortener is already live with an older page,** update the page first (merge its
+     pull request and let it deploy), then paste this `Code.gs`: this code refuses a code request
+     without the page's Cloudflare token, which an older page doesn't send, while the older code
+     simply ignores the token. Reload any `/urlshort` tab that was open from before. (Approving first means the sign-in never runs without the
      permissions this code needs.)
 6. **Deploy.**
    - Production deploys from `main`: merging the pull request that has the bindings deploys
@@ -195,8 +199,10 @@ million cells, so this keeps a flood of visits from ever filling it. Two full ta
 - **The bot check.** When the email sign-in opens, the page shows Cloudflare's "Verify you are
   human" check, the same Turnstile widget as the contact form (it usually passes by itself).
   "Send code" carries its token, which the Apps Script checks with Cloudflare before anything
-  else, so a script can't make the site send codes. A failed check uses none of the limits
-  above, and its answer is the same for every address. Cloudflare's script is fetched only when
+  else, so a script can't make the shortener's sign-in send codes. A failed check uses none of
+  the limits above, and its answer is the same for every address. (The daily cap is shared
+  with the contact form's and the PhD explorer's codes, which have checks of their own or none,
+  so those can still use it up.) Cloudflare's script is fetched only when
   the email sign-in opens, never for the owner key. The widget's hostnames in Cloudflare (Turnstile
   → the widget) must include `karan98.in`, as they already do for the contact form. If
   `TURNSTILE_SECRET` were removed from the Apps Script, codes would go out without the check,
@@ -231,6 +237,11 @@ million cells, so this keeps a flood of visits from ever filling it. Two full ta
   `TURNSTILE_SECRET` isn't the secret of the widget with site key `0x4AAAAAADsvK3etT1iNEaDP`
   (Cloudflare → Turnstile). **If it says the check couldn't load,** something on that device
   (an ad blocker, a network filter) blocks `challenges.cloudflare.com`; the owner key still works.
+  **If it says the check failed on this device (error …),** Cloudflare's widget itself gave up:
+  often a device clock that's far off, or a browser it doesn't support. If everyone gets it, the
+  widget's hostnames in Cloudflare (Turnstile → the widget) may not include `karan98.in`.
+  **If it says "Couldn't send a code just now"** for everyone right after the Apps Script was
+  updated, the page in use is older than this `Code.gs`: deploy the page, and reload.
 - **If every code is accepted but making a link then asks for a new code,** the two
   `URLSHORT_GATE_SECRET` values (Cloudflare and the Apps Script) aren't the same. Copy one into
   the other, and retry the latest deployment if you changed Cloudflare's.

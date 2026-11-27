@@ -76,7 +76,8 @@ this order:
 2. **Extensions → Apps Script** → replace the contents with
    [`functions/apps-script/Code.gs`](functions/apps-script/Code.gs).
 3. **Project Settings → Script properties** → add:
-   - `TURNSTILE_SECRET` — the Turnstile secret key (used on the GitHub-Pages path).
+   - `TURNSTILE_SECRET` — the Turnstile secret key. It checks the contact form's messages on both
+     paths, and the link shortener's code requests; without it, neither is checked.
    - `RECIPIENT` — `jaskaran.pta@gmail.com`.
    - `SHARED_SECRET` — any long random string; **must match** the Cloudflare env below.
    - `OBFUSCATION_KEY` — *(optional)* must match `OBF_KEY` in `app.js`; if omitted,

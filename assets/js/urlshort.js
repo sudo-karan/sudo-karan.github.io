@@ -67,6 +67,7 @@
     needHuman: 'Wait for the Cloudflare check to finish (tick it if it asks), then try again.',
     humanFailed: 'The Cloudflare check couldn’t load. Check your connection and try again.',
     humanAgain: 'The Cloudflare check didn’t pass. Try it again, then send the code.',
+    humanBroken: 'The Cloudflare check failed on this device (error {code}). Reload the page and try again. If it keeps failing, tell me through the contact form.',
     quota: 'No more sign-in codes can be sent today. Please try again tomorrow.',
     signInOffline: 'Couldn’t reach the sign-in service. Check your connection and try again.',
     sendFailed: 'Couldn’t send a code just now. Please try again.',
@@ -467,7 +468,7 @@
   }
 
   /* ---- the Cloudflare check before a code is sent (as the contact form's) ---- */
-  var ts = { state: 'idle', id: null };   // idle → loading → ready, or failed
+  var ts = { state: 'idle', id: null, size: '', err: '' };   // state: idle → loading → ready, or failed
   // Loaded the first time the email sign-in shows, and never for the owner key alone.
   function syncHuman() { if (keyOpen() && mode === 'email') tsLoad(); }
   function tsLoad() {
@@ -484,17 +485,34 @@
     s.onerror = function () { ts.state = 'failed'; if (s.parentNode) s.parentNode.removeChild(s); };
     document.head.appendChild(s);
   }
-  // Drawn once, while it shows, so its width is known: narrower than 300px, it's the compact one.
+  // Drawn while it shows, so its width is known: narrower than 300px, it's the compact one
+  // (urlshort.css keeps room for whichever it will be, so nothing jumps when it arrives).
+  function tsSize() { return tsBox.clientWidth > 0 && tsBox.clientWidth < 300 ? 'compact' : 'normal'; }
   function tsRender() {
     if (ts.state !== 'ready' || ts.id !== null || !tsBox || !keyOpen() || emailMode.hidden) return;
     try {
+      var size = tsSize();
       var id = window.turnstile.render(tsBox, {
-        sitekey: TS_SITE_KEY, action: TS_ACTION, theme: 'auto', 'response-field': false,
-        size: tsBox.clientWidth > 0 && tsBox.clientWidth < 300 ? 'compact' : 'normal'
+        sitekey: TS_SITE_KEY, action: TS_ACTION, theme: 'auto', 'response-field': false, size: size,
+        // an error it can't get past (a clock far off, an unsupported browser) is told as such
+        callback: function () { ts.err = ''; },
+        'error-callback': function (code) { ts.err = String(code || 'error').slice(0, 20); },
+        'unsupported-callback': function () { ts.err = 'unsupported'; }
       });
       ts.id = id == null ? null : id;
+      ts.size = size;
       if (ts.id === null) ts.state = 'failed';
     } catch (e) { ts.state = 'failed'; }
+  }
+  // a phone turned on its side and back: a widget drawn for another width is drawn again to fit
+  if (tsBox && typeof window.ResizeObserver === 'function') {
+    new window.ResizeObserver(function () {
+      if (ts.id === null || signing || !tsBox.clientWidth || tsSize() === ts.size) return;
+      try { window.turnstile.remove(ts.id); } catch (e) { /* drawn afresh below */ }
+      ts.id = null;
+      ts.err = '';
+      tsRender();
+    }).observe(tsBox);
   }
   function tsToken() {
     if (ts.id === null) return '';
@@ -747,7 +765,7 @@
         setSigning(null);
         if (!keyOpen() || mode !== 'email') return;   // moved on meanwhile
         if (t) sendCode(again);
-        else setError(where, ts.state === 'failed' ? MSG.humanFailed : MSG.needHuman, 'say');
+        else setError(where, ts.state === 'failed' ? MSG.humanFailed : ts.err ? MSG.humanBroken.replace('{code}', ts.err) : MSG.needHuman, 'say');
       });
       return;
     }

@@ -612,9 +612,12 @@ function urlshortToken(email, secret, exp) {
 }
 
 function urlshortSend(email, ts) {
-  var start = Date.now();
-  var answer = urlshortSendNow(normEmail(email), start, ts);
-  var wait = PHD_ANSWER_MS - (Date.now() - start);
+  // the padding hides whether a mail went out, so it is counted from once Cloudflare has
+  // answered (urlshortSendNow moves clock.start): siteverify's time, the same for every
+  // address, would otherwise eat into the time that covers the mail
+  var clock = { start: Date.now() };
+  var answer = urlshortSendNow(normEmail(email), clock.start, ts, clock);
+  var wait = PHD_ANSWER_MS - (Date.now() - clock.start);
   if (wait > 0) Utilities.sleep(wait);
   return answer;
 }
@@ -642,10 +645,11 @@ function urlshortHuman(token) {
   }
 }
 
-function urlshortSendNow(email, now, ts) {
+function urlshortSendNow(email, now, ts, clock) {
   if (!validEmail(email)) return { ok: false, reason: 'bad-email' };
   if (!urlshortSecret()) return { ok: false, reason: 'not-set-up' };
   if (!urlshortHuman(ts)) return { ok: false, reason: 'bot-check' };
+  if (clock) now = clock.start = Date.now();
   var listed = urlshortListed(email);
   var cache = CacheService.getScriptCache();
   var h = otpHash(email);
