@@ -10,3 +10,5 @@
   Cache-Control: no-cache
 /assets/css/*
   Cache-Control: no-cache
+/urlshort
+  Cache-Control: no-cache

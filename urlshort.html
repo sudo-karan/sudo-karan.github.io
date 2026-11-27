@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <!-- The API only exists on karan98.in, so the GitHub Pages mirror hands over at once. -->
+  <script>if (/(^|\.)github\.io$/i.test(location.hostname)) location.replace("https://karan98.in/urlshort");</script>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Short links · karan98.in</title>
+  <meta name="robots" content="noindex" />
+  <meta name="description" content="Jaskaran Singh’s private link shortener for karan98.in." />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="theme-color" content="#f8f4ec" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#1c1917" media="(prefers-color-scheme: dark)" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23f8f4ec'/%3E%3Ctext x='50' y='72' font-family='Georgia,serif' font-size='64' font-weight='700' fill='%236d28d9' text-anchor='middle'%3EJ%3C/text%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/css/urlshort.css" />
+  <script src="/assets/js/vendor/qrcode.js" defer></script>
+  <script src="/assets/js/urlshort.js" defer></script>
+</head>
+<body>
+  <svg class="sprite" aria-hidden="true" focusable="false">
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M15 9V6.5A2.5 2.5 0 0 0 12.5 4h-6A2.5 2.5 0 0 0 4 6.5v6A2.5 2.5 0 0 0 6.5 15H9"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.2 4.2L19 7"/></symbol>
+    <symbol id="i-open" viewBox="0 0 24 24"><path d="M14 5h5v5M19 5l-8.5 8.5M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4M7.5 11H6.5A2.5 2.5 0 0 0 4 13.5v4A2.5 2.5 0 0 0 6.5 20h11a2.5 2.5 0 0 0 2.5-2.5v-4a2.5 2.5 0 0 0-2.5-2.5h-1"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 20h14"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M10 11v6M14 11v6M6.5 7l.8 11.2A2 2 0 0 0 9.3 20h5.4a2 2 0 0 0 2-1.8L17.5 7M9.5 7V5.5A1.5 1.5 0 0 1 11 4h2a1.5 1.5 0 0 1 1.5 1.5V7"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M10.9 12.1L19 4M16 7l2.5 2.5M13.6 9.4l1.8 1.8"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.01"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
+    <symbol id="i-paste" viewBox="0 0 24 24"><rect x="5" y="4.5" width="14" height="16.5" rx="2.5"/><rect x="9" y="3" width="6" height="3.5" rx="1.2"/><path d="M9 11.5h6M9 15h4"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M12 2.5l1.5 6.9 6.73-2.15L15 12l5.23 4.75-6.73-2.15L12 21.5l-1.5-6.9-6.73 2.15L9 12 3.77 7.25l6.73 2.15z"/></symbol>
+  </svg>
+
+  <div class="page">
+    <header class="masthead">
+      <a class="brand" href="/">Jaskaran Singh<span class="dot">.</span></a>
+      <span class="runhead">Short links</span>
+    </header>
+
+    <main class="layout">
+      <section class="intro" aria-labelledby="title">
+        <p class="eyebrow">A private utility</p>
+        <h1 id="title">Long links,<br /> <em>in brief.</em></h1>
+        <p class="standfirst">Turn a long address into a tidy karan98.in link that opens anywhere. Anyone can follow a short link; only the owner can make one.</p>
+      </section>
+
+      <div class="tool">
+        <form id="shortenForm" class="card form-card" novalidate aria-labelledby="formTitle">
+          <h2 class="sr-only" id="formTitle">Make a short link</h2>
+
+          <div class="field" id="urlField">
+            <label class="flabel" for="url">Long URL</label>
+            <div class="input well">
+              <input id="url" name="url" type="text" inputmode="url" enterkeyhint="go"
+                     autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+                     placeholder="example.com/a/long/page" aria-describedby="urlErr" />
+              <button class="paste-btn" id="paste" type="button" aria-label="Paste from clipboard" hidden><svg class="i" aria-hidden="true"><use href="#i-paste"/></svg>Paste</button>
+            </div>
+            <p class="err" id="urlErr" hidden><svg class="i" aria-hidden="true"><use href="#i-alert"/></svg><span></span></p>
+          </div>
+
+          <div class="field" id="slugField">
+            <label class="flabel" for="slug">Custom ending <span class="opt">optional</span></label>
+            <div class="input affix">
+              <label class="prefix" for="slug">karan98.in/s/</label>
+              <input id="slug" name="slug" type="text" enterkeyhint="go" maxlength="64"
+                     autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+                     aria-describedby="slugHint slugErr" />
+            </div>
+            <p class="hint" id="slugHint">Leave blank for a random ending.</p>
+            <p class="err" id="slugErr" hidden><svg class="i" aria-hidden="true"><use href="#i-alert"/></svg><span></span></p>
+          </div>
+
+          <div class="keybox" id="keyBox" hidden>
+            <div class="keybox-in">
+              <input type="text" name="username" value="owner" autocomplete="username" hidden readonly tabindex="-1" />
+              <div class="field" id="keyField">
+                <label class="flabel" for="ownerKey"><svg class="i" aria-hidden="true"><use href="#i-lock"/></svg>Owner key</label>
+                <input class="input" id="ownerKey" name="ownerKey" type="password" enterkeyhint="go"
+                       autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false"
+                       aria-describedby="keyHint keyErr" />
+                <p class="hint" id="keyHint">Only the site’s owner can make links here.</p>
+                <p class="err" id="keyErr" hidden><svg class="i" aria-hidden="true"><use href="#i-alert"/></svg><span></span></p>
+              </div>
+              <label class="check"><input type="checkbox" id="rememberKey" name="rememberKey" checked /><span>Remember on this device</span></label>
+            </div>
+          </div>
+
+          <button class="btn primary submit" id="shorten" type="submit">
+            <span class="btn-label">Shorten link</span>
+            <svg class="i i-go" aria-hidden="true"><use href="#i-arrow"/></svg>
+            <span class="spin" aria-hidden="true"></span>
+          </button>
+
+          <div class="note" id="formNote" hidden>
+            <svg class="i" aria-hidden="true"><use href="#i-alert"/></svg>
+            <p class="note-text" id="formNoteText"></p>
+            <button class="btn sm" id="retry" type="button" hidden>Try again</button>
+          </div>
+
+          <p class="keystate" id="keyState" hidden>
+            <span class="keystate-text"><svg class="i" aria-hidden="true"><use href="#i-key"/></svg><span id="keyStateText">Key remembered on this device.</span></span>
+            <button class="text-btn" id="forgetKey" type="button">Forget key</button>
+          </p>
+        </form>
+
+        <section class="keepsake" id="result" hidden aria-labelledby="resultTitle">
+          <div class="ks-head">
+            <h2 class="eyebrow" id="resultTitle">Your short link</h2>
+            <time class="smallcaps" id="resultDate"></time>
+          </div>
+          <div class="ks-body">
+            <a class="short" id="short" target="_blank" rel="noopener noreferrer"><span class="host"></span><span class="code"></span></a>
+            <figure class="ks-qr" id="qrFigure">
+              <div class="qr" id="qr"></div>
+              <figcaption class="qr-save">
+                <svg class="i" aria-hidden="true"><use href="#i-download"/></svg>
+                <button class="text-btn" id="qrSave" type="button" aria-label="Save QR as PNG">PNG</button>
+                <span class="sep" aria-hidden="true">·</span>
+                <button class="text-btn" id="qrSvg" type="button" aria-label="Save QR as SVG">SVG</button>
+              </figcaption>
+            </figure>
+          </div>
+          <p class="orig"><span class="smallcaps">Leads to</span> <span class="orig-url" id="orig"></span></p>
+          <div class="ks-actions">
+            <button class="btn primary" id="copy" type="button">
+              <span class="swap"><svg class="i a" aria-hidden="true"><use href="#i-copy"/></svg><svg class="i b" aria-hidden="true"><use href="#i-check"/></svg></span>
+              <span class="swap"><span class="a">Copy link</span><span class="b" aria-hidden="true">Copied</span></span>
+            </button>
+            <a class="btn" id="open" target="_blank" rel="noopener noreferrer"><svg class="i" aria-hidden="true"><use href="#i-open"/></svg>Open<span class="sr-only"> in a new tab</span></a>
+            <button class="btn" id="share" type="button" hidden><svg class="i" aria-hidden="true"><use href="#i-share"/></svg>Share</button>
+            <button class="text-btn again" id="again" type="button"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>Shorten another</button>
+          </div>
+        </section>
+      </div>
+
+      <section class="recent" aria-labelledby="recentTitle">
+        <div class="recent-head">
+          <h2 id="recentTitle" tabindex="-1">Recent links <em>on this device</em></h2>
+          <span class="smallcaps" id="recentCount"></span>
+        </div>
+        <ul class="r-list" id="recent" hidden></ul>
+        <div class="empty" id="recentEmpty">
+          <span class="orn-rule" aria-hidden="true"><svg class="orn"><use href="#i-star"/></svg></span>
+          <p class="e-title">Nothing here yet.</p>
+          <p class="e-text">Links you make on this device will gather here, newest first.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="colophon">
+      <a href="/"><svg class="i" aria-hidden="true"><use href="#i-back"/></svg>Back to the portfolio</a>
+      <span>© <span id="year">2026</span> Jaskaran Singh</span>
+    </footer>
+  </div>
+
+  <p class="sr-only" id="status" role="status" aria-live="polite" aria-atomic="true"></p>
+</body>
+</html>

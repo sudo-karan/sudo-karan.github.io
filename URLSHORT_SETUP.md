@@ -55,7 +55,11 @@ rest of the site is unaffected.
   aloud.
 - **Recent links** on the page live on the device that made them. You can copy or delete from
   there.
-- **On a shared device**, use **Forget key on this device** when you're done.
+- **On a shared device**, use **Forget key** (under the Shorten button) when you're done. If you
+  untick **Remember on this device**, the key is kept for that tab only.
+- **Pasting:** on a computer you can paste a link anywhere on the page; on a phone, use the
+  **Paste** button in the link field.
+- **QR codes:** each new link comes with one, which you can save as PNG or SVG.
 - **To change the key**, edit the secret, retry the deployment, and enter the new key on your
   devices.
 
