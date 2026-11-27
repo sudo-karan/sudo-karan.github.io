@@ -155,6 +155,12 @@ Apps Script has copied them into the Sheet, and are deleted from D1 after that.
   tabs stay empty, open the Apps Script's **Executions** page. A failed `syncShortLinks` with
   HTTP 403 and a Cloudflare challenge means **Bot Fight Mode** (Security → Bots) is stopping
   Google's call: turn it off, or add a rule that skips it for `/api/urlshort/log`.
+- **If you ever delete and recreate the D1 database,** also delete the Script Property
+  `urlshort_log_last` in the Apps Script. It remembers how far the Sheet has got, and a new
+  database counts from 1 again, so without the reset its first events would be skipped.
+- **If every code is accepted but making a link then asks for a new code,** the two
+  `URLSHORT_GATE_SECRET` values (Cloudflare and the Apps Script) aren't the same. Copy one into
+  the other, and retry the latest deployment if you changed Cloudflare's.
 - **Timing:** a new link works everywhere almost at once. A deleted link may keep redirecting
   for up to about a minute in some places, because of KV's edge caching. An expired one stops at
   once: the expiry time is checked on every visit.
