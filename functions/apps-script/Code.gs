@@ -792,8 +792,10 @@ function urlshortWhy(code, text) {
   if (code === 404 || code === 405) return 'karan98.in doesn\'t have the link shortener yet: merge the pull request and let its deployment finish';
   if (code === 503 && /not-set-up/.test(t)) return 'karan98.in\'s live deployment has no URLSHORT_GATE_SECRET or no D1 database: add the secret in Cloudflare (type Secret, Production), then Deployments → ⋯ → Retry deployment';
   if (code === 401) return 'this script\'s URLSHORT_GATE_SECRET isn\'t the same as Cloudflare\'s: copy one into the other (and retry the deployment if you changed Cloudflare\'s)';
-  if (code === 403 && /wrong-host/.test(t)) return 'the log answers only at karan98.in itself';
-  if (code === 403) return 'Cloudflare stopped Google\'s call, probably Bot Fight Mode (Security → Bots): turn it off, or skip it for /api/urlshort/log';
+  // a challenge page (403, or 503 for some modes) rather than the log's own JSON
+  var challenge = /just a moment|challenge-platform|cf-chl|attention required/i.test(t);
+  if (challenge || (code === 403 && !/wrong-host/.test(t))) return 'Cloudflare stopped Google\'s call, probably Bot Fight Mode (Security → Bots): turn it off, or skip it for /api/urlshort/log';
+  if (code === 403) return 'the log answers only at karan98.in itself';
   if (code >= 500) return 'karan98.in had a problem; the next run tries again';
   return 'karan98.in answered in a way this script doesn\'t expect';
 }
@@ -830,7 +832,10 @@ function syncShortLinks() {
       }
       var data;
       try { data = JSON.parse(resp.getContentText()); } catch (e) { data = null; }
-      if (!data || data.ok !== true || !Array.isArray(data.events)) throw new Error('an unexpected answer from the log');
+      if (!data || data.ok !== true || !Array.isArray(data.events)) {
+        var odd = resp.getContentText();
+        throw new Error('HTTP 200: ' + urlshortWhy(200, odd) + '. (It answered: ' + odd.slice(0, 160) + ')');
+      }
       var made = [], visits = [], last = after;
       data.events.forEach(function (ev) {
         if (!ev || typeof ev.id !== 'number') return;
