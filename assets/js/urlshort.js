@@ -1550,7 +1550,7 @@
       if ((r.status >= 200 && r.status < 300 && d.ok === true) || err === 'not-found') {
         acceptKey(k);   // a not-found has passed the key check too
         if (pendingDelete === code) closeKeyBox();   // the panel was asking for this delete
-        removeEntry(code, err === 'not-found');
+        removeEntry(code, err === 'not-found', fromKey);
         return;
       }
       if (cur) endConfirm(cur, false);
@@ -1568,7 +1568,8 @@
       if (again) again.focus();
     });
   }
-  function removeEntry(code, gone) {
+  // viaPanel: finished from the sign-in panel, whose Shorten button showed it working
+  function removeEntry(code, gone, viaPanel) {
     var li = rowFor(code);
     var label = bare((findEntry(code) || { short: shortFor('', code) }).short);
     var next = li ? li.nextElementSibling || li.previousElementSibling : null;
@@ -1580,9 +1581,10 @@
     setTimeout(function () {
       renderRecent();
       // Move focus only if it went with the row (or with the panel the delete was
-      // finished from): by now the user may be typing a new link, or on its Copy button.
+      // finished from, or waits on the button that showed it): by now the user may be
+      // typing a new link, or on its Copy button.
       var a = document.activeElement;
-      if (a && a !== document.body && a.getClientRects().length) return;
+      if (a && a !== document.body && a.getClientRects().length && !(viaPanel && a === shortenBtn)) return;
       var target = nextCode ? list.querySelector('li[data-code="' + nextCode + '"] .r-short') : null;
       (target || recentTitle).focus();
     }, reduced() ? 0 : 220);
