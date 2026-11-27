@@ -81,7 +81,8 @@ Cloudflare `PRIVATE_KEY` env var. To rotate it, generate a new pair (Web Crypto
      newline-separated, compared lower-case. See the last section.
    - `PHD_GATE_SECRET` — another long random string, not the map's; **must match** the
      explorer's Cloudflare env `PHD_GATE_SECRET`. See the last section.
-   - `URLSHORT_WHITELIST`, `URLSHORT_GATE_SECRET` and the optional `URLSHORT_PASS_HOURS` —
+   - `URLSHORT_WHITELIST`, `URLSHORT_GATE_SECRET` and the optional `URLSHORT_PASS_HOURS` and
+     `URLSHORT_TAB_ROWS` —
      for the link shortener's makers and its log; see [`URLSHORT_SETUP.md`](URLSHORT_SETUP.md)
      (which also has you run `installShortLinkSync` once).
 4. **Deploy → New deployment → Web app** — *Execute as:* **Me**, *Who has access:*

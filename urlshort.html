@@ -111,13 +111,13 @@
           <div class="keybox" id="keyBox" hidden>
             <div class="keybox-in">
               <div class="signin" id="emailMode">
-                <p class="kb-lead">Making links is open to people on an allow list. Not on it? <a href="/#contact">Write to me</a>.</p>
+                <p class="kb-lead" id="kbLead">Making links is open to people on an allow list. Not on it? <a href="/#contact">Write to me</a>.</p>
                 <div class="field" id="emailField">
                   <label class="flabel" for="email"><svg class="i" aria-hidden="true"><use href="#i-mail"/></svg>Your email</label>
                   <div class="input well">
                     <input id="email" name="email" type="email" inputmode="email" enterkeyhint="send" maxlength="254"
                            autocomplete="email" autocapitalize="off" autocorrect="off" spellcheck="false"
-                           aria-describedby="emailErr" />
+                           aria-describedby="kbLead emailErr" />
                     <button class="well-btn" id="sendCode" type="button">
                       <span class="swap"><span class="a">Send code</span><span class="b">Sending…</span></span>
                     </button>
@@ -227,7 +227,7 @@
     <footer class="colophon">
       <a href="/"><svg class="i" aria-hidden="true"><use href="#i-back"/></svg>Back to the portfolio</a>
       <span>© <span id="year">2026</span> Jaskaran Singh</span>
-      <p class="fineprint">Short links here are logged: when each link is made and each time one is opened, with the approximate location (from the IP address), network and device. The log is private to the site’s owner.</p>
+      <p class="fineprint">Short links here are logged: when each link is made, by whom, and each time one is opened, with the IP address and the approximate place it gives, the network, browser and device, the language and the page the visit came from. The log is private to the site’s owner.</p>
     </footer>
   </div>
 

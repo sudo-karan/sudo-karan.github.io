@@ -26,7 +26,7 @@ everything else works. The rest of the site is unaffected either way.
 | | Owner key | Email on the allow list | Anyone |
 |---|---|---|---|
 | Make a link | yes | yes, after an email code | no |
-| How long it lasts | 10 minutes to 10 years, or never; 24 hours unless chosen | 10 minutes to 30 days; 24 hours unless chosen | – |
+| How long it lasts | on the page, 10 minutes to 30 days, or never; 24 hours unless chosen (the API itself takes up to 10 years) | 10 minutes to 30 days; 24 hours unless chosen | – |
 | Delete a link | any link | the links made with that email | no |
 | Open a short link | yes | yes | yes, until it expires |
 
@@ -76,11 +76,14 @@ contact form) to be added.
      - `URLSHORT_WHITELIST`: the addresses allowed to make links, comma- or newline-separated.
      - `URLSHORT_PASS_HOURS` (optional): how long a code keeps someone signed in on their
        device, 1–720 hours. Default 24.
+     - `URLSHORT_TAB_ROWS` (optional): how many rows each log tab keeps, newest first,
+       1,000–200,000. Default 100,000. See "What is logged".
    - **Deploy → Manage deployments → ✎ Edit → Version: New version → Deploy.** The web app's
      URL stays the same.
    - In the editor, pick **installShortLinkSync** and press **Run** once. Approve the new
      permission (to run on a timer). From then on the **Short links** and **Link visits** tabs
-     fill every 5 minutes. Running it again is harmless.
+     fill every 5 minutes. Running it again is harmless. Runs before step 6's deployment is
+     live may fail (HTTP 503 or 401) and Google may email you about them; that's expected.
 6. **Deploy.**
    - The push in step 3 deploys.
    - If you added a secret after that deploy finished, retry the latest deployment so the
@@ -96,21 +99,29 @@ contact form) to be added.
 
 ## What is logged
 
-The page's footer tells visitors that the shortener keeps a log. Each row in the Sheet has the
-time (IST) and:
+The page's footer tells visitors what the shortener logs. People who only follow a short link go
+straight to its destination and don't see that notice. Each row in the Sheet has the time (IST)
+and:
 
 - **Short links** tab: each link made (and whether it was new, the same link again, or a
   renewal), deleted, or refused (a wrong key or pass); the short and long link; when it stops
   working; who made it (`owner`, or the email address); and the maker's IP address, approximate
   place (country, state, city, postal code, coordinates, from the IP address), network (ISP and
-  ASN), browser, operating system and device. The page also sends the maker's screen and window
-  size, time zone, languages and similar details, the same set the contact form records.
+  ASN), browser, operating system and device. The page also sends the maker's browser and OS
+  versions, device model, screen and window size, pixel ratio, colour scheme, time zone and UTC
+  offset, languages, touch points, CPU cores, approximate memory and network type: a subset of
+  what the contact form records.
 - **Link visits** tab: every time a short link is opened: which link, whether it went through,
   had expired, or didn't exist, and the visitor's IP address, approximate place, network,
   browser, operating system, device type, language and the page they came from.
 
 The log holds personal data. Keep the Sheet private. The events wait in the D1 database until the
 Apps Script has copied them into the Sheet, and are deleted from D1 after that.
+
+Each log tab keeps the newest 100,000 rows (`URLSHORT_TAB_ROWS`) and removes older ones as new
+rows arrive. The tabs share the contact form's spreadsheet, and a spreadsheet holds at most 10
+million cells, so this keeps a flood of visits from ever filling it. Two full tabs take about
+6.6 million cells. If you'd rather keep everything, copy the old rows elsewhere now and then.
 
 ## Everyday use
 - **How long links last:** choose under **Link lasts** when you make one: 10 minutes, 1 hour,
@@ -121,7 +132,10 @@ Apps Script has copied them into the Sheet, and are deleted from D1 after that.
 - **Adding someone:** add their address to `URLSHORT_WHITELIST`. No redeploy is needed.
 - **Removing someone:** take their address off the list. They can't get another code, but a
   pass they already have keeps working until it runs out (24 hours by default). To end every
-  pass at once, change `URLSHORT_GATE_SECRET` in both Cloudflare and the Apps Script.
+  pass at once, change `URLSHORT_GATE_SECRET` in both Cloudflare and the Apps Script, then retry
+  the latest deployment (**Deployments → ⋯ → Retry deployment**). Until that deployment is live,
+  old passes keep working, new codes give passes the site refuses, and the Sheet stops filling
+  (the events wait in D1).
 - **Custom endings** (`karan98.in/s/resume`): 3–40 letters, digits or hyphens. Case doesn't
   matter.
 - **Random codes** are 6 characters with no `0`/`o` or `1`/`l`/`i`, so they survive being read
@@ -146,15 +160,23 @@ Apps Script has copied them into the Sheet, and are deleted from D1 after that.
 ## Limits and behaviour
 - **KV free plan:** 100,000 link opens and 1,000 new or deleted links a day (resets at
   00:00 UTC).
-- **D1 free plan:** 100,000 logged events a day and 5 GB in all; events leave D1 once they're in
-  the Sheet.
+- **D1 free plan:** 100,000 rows written a day and 5 GB in all. Each logged event uses about 3
+  of those writes (2 when it's logged, 1 when it's cleared after reaching the Sheet), so roughly
+  30,000 events a day; beyond that, new events aren't logged until the reset at 00:00 UTC. Links
+  keep working either way.
 - **Email codes** come from the Apps Script's Gmail and share the contact form's daily cap
   (`OTP_DAILY_CAP`, 85 by default). Each address can ask for 3 codes an hour. Answers take about
   4 seconds on purpose, and they never say whether an address is on the list.
-- **The Sheet** fills every 5 minutes, so the newest events can take that long to appear. If the
-  tabs stay empty, open the Apps Script's **Executions** page. A failed `syncShortLinks` with
-  HTTP 403 and a Cloudflare challenge means **Bot Fight Mode** (Security → Bots) is stopping
-  Google's call: turn it off, or add a rule that skips it for `/api/urlshort/log`.
+- **The Sheet** fills every 5 minutes, so the newest events can take that long to appear. If it
+  stops filling, the `syncShortLinks` runs show as **Failed** on the Apps Script's
+  **Executions** page (Google usually emails you about failed runs too), and the error says why:
+  - HTTP 403 with a Cloudflare challenge page: **Bot Fight Mode** (Security → Bots) is stopping
+    Google's call. Turn it off, or add a rule that skips it for `/api/urlshort/log`.
+  - HTTP 401: the two `URLSHORT_GATE_SECRET` values (Cloudflare and the Apps Script) differ.
+  - HTTP 503 `not-set-up`: the D1 database isn't bound yet, or Cloudflare has no
+    `URLSHORT_GATE_SECRET`.
+
+  Meanwhile the events wait in D1, and the next good runs catch up, up to 2,500 events each.
 - **If you ever delete and recreate the D1 database,** also delete the Script Property
   `urlshort_log_last` in the Apps Script. It remembers how far the Sheet has got, and a new
   database counts from 1 again, so without the reset its first events would be skipped.

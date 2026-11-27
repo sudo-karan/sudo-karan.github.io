@@ -64,6 +64,8 @@
      URLSHORT_GATE_SECRET - must equal the shortener's Cloudflare secret URLSHORT_GATE_SECRET,
                             and not ICTD's or PhD's
      URLSHORT_PASS_HOURS  - (optional) how long a shortener pass lasts, 1–720 hours (default 24)
+     URLSHORT_TAB_ROWS    - (optional) rows each shortener log tab keeps, newest first,
+                            1,000–200,000 (default 100,000)
 
    Deploy: Web app · Execute as: Me · Who has access: Anyone.
    After pasting: run doPost once → Allow all permissions → Deploy → New version.
@@ -177,20 +179,28 @@ function doPost(e) {
       doNotTrack: m.doNotTrack, bot: 'No', referer: m.referer, pageUrl: m.pageUrl, userAgent: m.userAgent
     };
 
-    var ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
-    var sh = ss.getSheets()[0];
-    var header = FIELDS.map(function (fld) { return fld[0]; });
-    var lastRow = sh.getLastRow();
-    if (lastRow === 0) {
-      sh.appendRow(header);
-    } else if (lastRow === 1) {
-      var have = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
-      if (have.length !== header.length || have[0] !== header[0]) {
-        sh.getRange(1, 1, 1, have.length).clearContent();
-        sh.getRange(1, 1, 1, header.length).setValues([header]);
+    // The row and the email don't wait on each other: a Sheet that refuses the row (full,
+    // say) still lets the message reach the inbox, and a failed email still leaves the row.
+    var stored = false, mailed = false;
+    try {
+      var ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
+      var sh = ss.getSheets()[0];
+      var header = FIELDS.map(function (fld) { return fld[0]; });
+      var lastRow = sh.getLastRow();
+      if (lastRow === 0) {
+        sh.appendRow(header);
+      } else if (lastRow === 1) {
+        var have = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+        if (have.length !== header.length || have[0] !== header[0]) {
+          sh.getRange(1, 1, 1, have.length).clearContent();
+          sh.getRange(1, 1, 1, header.length).setValues([header]);
+        }
       }
+      sh.appendRow(FIELDS.map(function (fld) { var v = rec[fld[1]]; return v == null ? '' : sheetSafe(v); }));
+      stored = true;
+    } catch (eS) {
+      console.error('doPost: the Sheet refused the message: ' + eS);
     }
-    sh.appendRow(FIELDS.map(function (fld) { var v = rec[fld[1]]; return v == null ? '' : sheetSafe(v); }));
 
     var html = '<h2 style="font-family:Arial,sans-serif;color:#4c1d95">New message from karan98.in</h2>' +
       '<table cellpadding="6" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px">';
@@ -202,14 +212,20 @@ function doPost(e) {
     });
     html += '</table>';
 
-    MailApp.sendEmail({
-      to: recipient,
-      replyTo: f.email || recipient,
-      subject: 'New message: ' + (f.subject || '(no subject)'),
-      htmlBody: html,
-      name: 'karan98.in contact form'
-    });
+    try {
+      MailApp.sendEmail({
+        to: recipient,
+        replyTo: f.email || recipient,
+        subject: 'New message: ' + (f.subject || '(no subject)'),
+        htmlBody: html,
+        name: 'karan98.in contact form'
+      });
+      mailed = true;
+    } catch (eM) {
+      console.error('doPost: the notification email failed: ' + eM);
+    }
 
+    if (!stored && !mailed) return out({ ok: false, error: 'not-saved' });
     return out({ ok: true });
   } catch (err) {
     return out({ ok: false, error: String(err) });
@@ -431,23 +447,6 @@ function phdListed(email) {
   return raw.split(/[,\r\n]+/).some(function (x) { return normEmail(x) === email; });
 }
 
-// What otpReserve would answer, without taking a slot: the answer for an address not on the list.
-function phdQuotaOpen() {
-  if (MailApp.getRemainingDailyQuota() <= 15) return false;
-  var cap = parseInt(PropertiesService.getScriptProperties().getProperty('OTP_DAILY_CAP') || '85', 10) || 85;
-  var lock = LockService.getScriptLock();
-  try { lock.waitLock(3000); } catch (e) { return false; }
-  try {
-    var today = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyyMMdd');
-    var q;
-    try { q = JSON.parse(PropertiesService.getScriptProperties().getProperty('otp_quota') || '{}'); } catch (e2) { q = {}; }
-    if (!q || q.date !== today) return true;
-    return q.count < cap;
-  } finally {
-    lock.releaseLock();
-  }
-}
-
 // This code opens a gate, so it comes from getUuid rather than Math.random.
 function phdCode() {
   var d = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid(), Utilities.Charset.UTF_8);
@@ -499,7 +498,9 @@ function phdSendNow(email, now) {
   if (rl.count >= 3) {
     return { ok: false, reason: 'rate-limit', retryMins: Math.max(1, Math.ceil((3600000 - elapsed) / 60000)) };
   }
-  if (!(listed ? otpReserve() : phdQuotaOpen())) return { ok: false, reason: 'quota' };
+  // A slot is taken whether or not the address is listed: if only a listed one took it,
+  // the next answer to anyone could show what this one was.
+  if (!otpReserve()) return { ok: false, reason: 'quota' };
   var held = { tries: 0, exp: now + 600000 }; // without a code, a decoy: no code matches it
   if (listed) {
     held.code = phdCode();
@@ -620,7 +621,7 @@ function urlshortSendNow(email, now) {
   if (rl.count >= 3) {
     return { ok: false, reason: 'rate-limit', retryMins: Math.max(1, Math.ceil((3600000 - elapsed) / 60000)) };
   }
-  if (!(listed ? otpReserve() : phdQuotaOpen())) return { ok: false, reason: 'quota' };
+  if (!otpReserve()) return { ok: false, reason: 'quota' }; // listed or not, as phdSendNow
   var held = { tries: 0, exp: now + 600000 }; // without a code, a decoy: no code matches it
   if (listed) {
     held.code = phdCode();
@@ -736,6 +737,14 @@ var URLSHORT_VISIT_COLS = [
   ['Long URL', function (e) { return e.url; }]
 ].concat(URLSHORT_PLACE_COLS, URLSHORT_TAIL_COLS);
 
+// How many rows each log tab keeps, newest first (Script Property URLSHORT_TAB_ROWS, default
+// 100,000). A spreadsheet holds at most 10 million cells, and this one is the contact form's
+// too: two full tabs come to about 6.6 million, so visits, however many, can't fill it.
+function urlshortTabRows() {
+  var n = parseInt(PropertiesService.getScriptProperties().getProperty('URLSHORT_TAB_ROWS') || '100000', 10);
+  return Math.min(200000, Math.max(1000, n || 100000));
+}
+
 function urlshortAppend(ss, name, cols, events) {
   if (!events.length) return;
   // a new tab goes last: doPost writes the contact form to the first one
@@ -747,15 +756,20 @@ function urlshortAppend(ss, name, cols, events) {
   var rows = events.map(function (e) {
     return cols.map(function (c) { var v = c[1](e); return v == null ? '' : sheetSafe(v); });
   });
+  var have = sh.getLastRow() - 1;                       // data rows, under the header
+  var over = have + rows.length - urlshortTabRows();
+  if (over > 0 && have > 0) sh.deleteRows(2, Math.min(over, have));   // the oldest go first
   sh.getRange(sh.getLastRow() + 1, 1, rows.length, cols.length).setValues(rows);
 }
 
 // Pulls new events into the "Short links" and "Link visits" sheets. The Function forgets events
 // only once a later call shows they arrived here (it deletes ids up to `after`), so a failed run
 // loses nothing: the next one fetches the same events again.
+// Anything that goes wrong is thrown, so the run shows as Failed on the Executions page and
+// Google's failure email says why: a Sheet that quietly stops filling would go unnoticed.
 function syncShortLinks() {
   var secret = urlshortSecret();
-  if (!secret) { console.error('syncShortLinks: URLSHORT_GATE_SECRET is missing, or the same as another gate\'s'); return; }
+  if (!secret) throw new Error('syncShortLinks: URLSHORT_GATE_SECRET is missing, or the same as another gate\'s');
   var lock = LockService.getUserLock(); // not the script lock, which the sign-ins hold briefly
   if (!lock.tryLock(1000)) return;      // the previous run is still going
   try {
@@ -764,30 +778,37 @@ function syncShortLinks() {
     var ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
     var key = urlshortLogKey(secret);
     for (var page = 0; page < 5; page++) {
-      var after = parseInt(props.getProperty('urlshort_log_last') || '0', 10) || 0;
+      // "N": the Sheet has every event up to N. "N+M": a run stopped part-way through the page
+      // after N, once its "Short links" rows (ids up to M) were in but before its visits were.
+      var cur = String(props.getProperty('urlshort_log_last') || '0');
+      var after = parseInt(cur, 10) || 0, madeDone = parseInt(cur.split('+')[1], 10) || 0;
       var resp = UrlFetchApp.fetch(URLSHORT_LOG_URL, {
         method: 'post', contentType: 'application/json', muteHttpExceptions: true, followRedirects: false,
         headers: { Authorization: 'Bearer ' + key },
         payload: JSON.stringify({ after: after, limit: URLSHORT_LOG_PAGE })
       });
       if (resp.getResponseCode() !== 200) {
-        console.error('syncShortLinks: HTTP ' + resp.getResponseCode() + ' ' + resp.getContentText().slice(0, 200));
-        return;
+        throw new Error('HTTP ' + resp.getResponseCode() + ' ' + resp.getContentText().slice(0, 200));
       }
       var data;
       try { data = JSON.parse(resp.getContentText()); } catch (e) { data = null; }
-      if (!data || data.ok !== true || !Array.isArray(data.events)) { console.error('syncShortLinks: unexpected answer'); return; }
+      if (!data || data.ok !== true || !Array.isArray(data.events)) throw new Error('an unexpected answer from the log');
       var made = [], visits = [], last = after;
       data.events.forEach(function (ev) {
         if (!ev || typeof ev.id !== 'number') return;
         if (ev.id > last) last = ev.id;
-        (ev.kind === 'visit' ? visits : made).push(ev);
+        if (ev.kind === 'visit') visits.push(ev);
+        else if (ev.id > madeDone) made.push(ev);
       });
       urlshortAppend(ss, 'Short links', URLSHORT_MADE_COLS, made);
+      if (visits.length) props.setProperty('urlshort_log_last', after + '+' + last);
       urlshortAppend(ss, 'Link visits', URLSHORT_VISIT_COLS, visits);
       props.setProperty('urlshort_log_last', String(last));
       if (data.events.length < URLSHORT_LOG_PAGE || last === after) return;
     }
+  } catch (e) {
+    console.error('syncShortLinks: ' + e);   // the next run (5 minutes) picks up where this one stopped
+    throw e;
   } finally {
     lock.releaseLock();
   }

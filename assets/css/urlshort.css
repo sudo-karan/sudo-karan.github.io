@@ -310,7 +310,7 @@ button { cursor: pointer; }
 
 /* signing in: folds open on the first submit when no key or sign-in is known */
 .keybox { display: grid; grid-template-rows: 1fr; margin-top: 1.35rem; }
-.keybox-in { min-height: 0; overflow: hidden; margin: -6px; padding: 6px; }  /* room for the focus ring */
+.keybox-in { min-height: 0; overflow: hidden; margin: -12px; padding: 12px; }  /* room for the focus ring, offset included */
 .keybox-in > .field, .keybox-in > .signin { padding-top: 1.35rem; border-top: 1px solid var(--line); }
 .kb-lead { margin-bottom: 1.1rem; font-size: 0.9rem; line-height: 1.5; color: var(--ink-2); text-wrap: pretty; }
 .kb-lead a {
@@ -566,6 +566,7 @@ button { cursor: pointer; }
 /* above the row link's overlay too, which reaches into it: a click on the message is not a click on the link */
 .r-msg { position: relative; z-index: 1; grid-column: 1 / -1; font-size: 0.82rem; font-weight: 500; color: var(--danger); }
 .r-msg.calm { color: var(--ink-2); }
+.r-msg .text-btn { margin-left: -0.4rem; font-size: 0.82rem; }
 .r-item.is-busy { opacity: 0.75; }
 .r-more { display: flex; justify-content: center; padding-top: 0.5rem; }
 

@@ -38,7 +38,7 @@
                            and Secrets). Any long random string.
      URLSHORT_GATE_SECRET  the secret the Apps Script signs passes with (the same
                            value as its Script Property), also an encrypted secret.
-                           Changing it signs everyone out.
+                           Changing it (and redeploying) signs everyone out.
      URLSHORT_DB           optional D1 binding for the event log (see the log).
    Without the KV binding, or with neither secret, every call answers
    503 { error: "not-set-up" }.

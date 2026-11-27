@@ -457,6 +457,13 @@
       keyBox.classList.remove('opening');
       void keyBox.offsetWidth;   // restart the unfold
       keyBox.classList.add('opening');
+      // the panel grows as it unfolds, so the field given focus can end up below the fold
+      keyBox.addEventListener('animationend', function shown(ev) {
+        if (ev.target !== keyBox) return;
+        keyBox.removeEventListener('animationend', shown);
+        var f = document.activeElement;
+        if (f && keyBox.contains(f)) bringIntoView(f);
+      });
     }
     if (m && m !== mode) setMode(m); else syncNever();
     syncPaste();
@@ -569,15 +576,21 @@
     setError('email', err === 'pass-expired' ? MSG.passExpired : MSG.passRejected, 'calm');
   }
   forgetBtn.addEventListener('click', function () {
+    var never = neverIn.checked;
     lsDel(KEY_STORE);
     memKey = '';
     remembered = false;
     syncKeyUi();
     shortenBtn.focus();
-    announce('Key forgotten. Making a link will ask for it again.');
+    // one announcement, so the fall-back from "Never" (syncNever) isn't talked over
+    announce('Key forgotten. Making a link will ask for it again.' + (never && !neverIn.checked ? ' ' + MSG.neverGone : ''));
   });
+  // Signing out is for handing the device on, so the address goes too: the next person
+  // isn't shown it, or offered to send it a code.
   signOutBtn.addEventListener('click', function () {
     forgetPass(null);
+    lastEmail = '';
+    emailIn.value = '';
     shortenBtn.focus();
     announce('Signed out. Making a link will ask you to sign in again.');
   });
@@ -1122,7 +1135,12 @@
     // the date and time stay on one line
     resultExp.hidden = e.x === undefined;
     resultExpText.textContent = e.x === 0 ? 'Never expires' : e.x ? 'Works until ' : '';
-    if (e.x) resultExpText.appendChild(el('span', 'when', fmtWhen(e.x)));
+    if (e.x) {
+      // the line may break between the date and the time, never inside either (narrow phones)
+      var w = fmtWhen(e.x), cut = w.lastIndexOf(', ') + 1;
+      resultExpText.appendChild(el('span', 'when', cut ? w.slice(0, cut) : w));
+      if (cut) { resultExpText.appendChild(document.createTextNode(' ')); resultExpText.appendChild(el('span', 'when', w.slice(cut + 1))); }
+    }
     fillOrig(origEl, e.url, true);
     origEl.parentNode.hidden = !e.url;
     dateEl.textContent = fmtDate(e.t);
@@ -1446,13 +1464,24 @@
     announce(showAll ? 'Showing all ' + readRecent().length + ' links.' : 'Showing the latest ' + SHOWN_RECENT + ' links.');
   });
 
+  // `forget`: the row can't be deleted from here (someone else's link), so offer to take it
+  // off this device's list instead, which leaves the link itself alone
   function paintRowMsg(li, m) {
     var old = li.querySelector('.r-msg');
     if (old) old.remove();
-    if (m) li.appendChild(el('p', 'r-msg' + (m.calm ? ' calm' : ''), m.text));
+    if (!m) return;
+    var p = el('p', 'r-msg' + (m.calm ? ' calm' : ''), m.text);
+    if (m.forget) {
+      var b = el('button', 'text-btn', 'Remove from this list');
+      b.type = 'button';
+      b.setAttribute('data-action', 'forget');
+      p.appendChild(document.createTextNode(' '));
+      p.appendChild(b);
+    }
+    li.appendChild(p);
   }
-  function setRowMsg(code, text, calm) {
-    if (text) rowMsg[code] = { text: text, calm: !!calm };
+  function setRowMsg(code, text, calm, forget) {
+    if (text) rowMsg[code] = { text: text, calm: !!calm, forget: !!forget };
     else delete rowMsg[code];
     var li = rowFor(code);
     if (li) paintRowMsg(li, rowMsg[code]);
@@ -1573,13 +1602,15 @@
       }
       var msg = err === 'not-yours' ? MSG.notYours : err === 'not-set-up' ? MSG.notSetUp :
         err === 'wrong-host' ? MSG.wrongHost : r.status === 0 ? MSG.offline : MSG.deleteFailed;
-      setRowMsg(code, msg, false);
+      setRowMsg(code, msg, false, err === 'not-yours');
       announce(msg);
-      var again = cur && cur.querySelector('[data-action="delete"]');
+      var again = cur && cur.querySelector(err === 'not-yours' ? '[data-action="forget"]' : '[data-action="delete"]');
       if (again) again.focus();
     });
   }
-  // viaPanel: finished from the sign-in panel, whose Shorten button showed it working
+  // viaPanel: finished from the sign-in panel, whose Shorten button showed it working.
+  // gone: true when the server said the link was already gone; 'kept' when it is only
+  // taken off this list (Remove from this list) and still works.
   function removeEntry(code, gone, viaPanel) {
     var li = rowFor(code);
     var label = bare((findEntry(code) || { short: shortFor('', code) }).short);
@@ -1599,7 +1630,8 @@
       var target = nextCode ? list.querySelector('li[data-code="' + nextCode + '"] .r-short') : null;
       (target || recentTitle).focus();
     }, reduced() ? 0 : 220);
-    announce(gone ? 'That link was already gone, so it’s off the list now.' : 'Deleted ' + label + '.');
+    announce(gone === 'kept' ? 'Taken off this list. The link itself still works.' :
+      gone ? 'That link was already gone, so it’s off the list now.' : 'Deleted ' + label + '.');
   }
 
   list.addEventListener('click', function (ev) {
@@ -1614,6 +1646,7 @@
     else if (action === 'delete') askDelete(li);
     else if (action === 'cancel-delete') endConfirm(li, true);
     else if (action === 'confirm-delete') doDelete(code);
+    else if (action === 'forget') removeEntry(code, 'kept', false);
   });
   list.addEventListener('keydown', function (ev) {
     if (ev.key !== 'Escape') return;
