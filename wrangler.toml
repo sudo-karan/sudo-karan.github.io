@@ -6,3 +6,29 @@
 name = "sudo-karan-github-io"
 compatibility_date = "2024-11-06"
 pages_build_output_dir = "."
+
+# Link shortener storage (karan98.in/urlshort; see URLSHORT_SETUP.md). Bindings
+# for this project must be declared here: with this file present, Cloudflare
+# ignores bindings added in the dashboard. The namespace "urlshort" holds the links.
+[[kv_namespaces]]
+binding = "URLSHORT"
+id = "cb745478e28f4cf894006b1c322c49b2"
+
+# The link shortener's event log (links made and deleted, every visit), which the
+# Apps Script pulls into Google Sheets; see URLSHORT_SETUP.md. Without it nothing
+# is logged and the shortener works the same.
+[[d1_databases]]
+binding = "URLSHORT_DB"
+database_name = "urlshort-log"
+database_id = "9c412919-477c-484b-b1ce-9b84f4a37a54"
+
+# Pull-request previews (branch builds at *.pages.dev) share the links, so a short link works
+# there too, but not the log: their visits and refused writes would show in the Sheet as if
+# they were karan98.in's. A block for an environment replaces the bindings above, so the
+# preview gets the KV namespace again here and no D1 database. Production uses the above.
+[env.preview]
+d1_databases = []
+
+[[env.preview.kv_namespaces]]
+binding = "URLSHORT"
+id = "cb745478e28f4cf894006b1c322c49b2"

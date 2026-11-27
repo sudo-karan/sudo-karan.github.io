@@ -10,3 +10,9 @@
   Cache-Control: no-cache
 /assets/css/*
   Cache-Control: no-cache
+# The link shortener's page is never shown inside another site's frame, so a hidden
+# frame can't trick the owner into making or deleting links.
+/urlshort
+  Cache-Control: no-cache
+  X-Frame-Options: DENY
+  Content-Security-Policy: frame-ancestors 'none'

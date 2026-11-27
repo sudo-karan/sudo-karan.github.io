@@ -1,0 +1,646 @@
+/* ============================================================================
+   karan98.in/urlshort: "Editorial calm"
+   Cream paper with soft violet washes, Playfair headlines with an italic violet
+   accent, one card for the form and a keepsake card for the result. The tokens
+   follow assets/css/styles.css; the dark scheme follows 404.html.
+   ========================================================================== */
+
+:root {
+  color-scheme: light dark;
+
+  --paper:   #f8f4ec;
+  --card:    #fffdf8;
+  --field:   #faf6ef;
+  --ink:     #1d1a15;
+  --ink-2:   #5c554b;
+  --ink-3:   #6f675b;            /* the portfolio's #908779, darkened to pass AA for small text */
+  --line:    rgba(29,26,21,0.12);
+  --line-2:  rgba(29,26,21,0.22);
+  --field-line: rgba(29,26,21,0.5);    /* 3.3:1 against the card, for form fields */
+
+  --violet:      #6d28d9;
+  --violet-2:    #8b5cf6;
+  --violet-deep: #4c1d95;
+  --violet-tint: #efe9fd;
+  --btn:         #6d28d9;
+  --btn-hover:   #4c1d95;
+  --frame:       rgba(109,40,217,0.20);
+  --ring:        rgba(109,40,217,0.16);
+  --ring-danger: rgba(180,35,24,0.14);
+  --on-select:   #fff;
+
+  --danger:       #b42318;
+  --danger-solid: #b42318;
+  --danger-tint:  #fcefec;
+  --danger-line:  rgba(180,35,24,0.26);
+
+  --qr-bg:  #fffdf8;
+  --qr-ink: #1d1a15;
+
+  --shadow-sm: 0 1px 2px rgba(29,26,21,0.05);
+  --shadow:    0 22px 48px -28px rgba(76,29,149,0.30), 0 2px 6px rgba(29,26,21,0.04);
+  --shadow-lg: 0 36px 70px -30px rgba(76,29,149,0.36), 0 2px 6px rgba(29,26,21,0.04);
+  --wash-a: rgba(139,92,246,0.12);
+  --wash-b: rgba(109,40,217,0.08);
+  --wash-c: rgba(139,92,246,0.07);
+
+  --serif: "Playfair Display", Georgia, "Times New Roman", serif;
+  --sans:  "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono:  ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --ease:  cubic-bezier(0.22, 1, 0.36, 1);
+
+  --maxw: 1120px;
+  --pad:  clamp(1.2rem, 4vw, 2.5rem);
+  --radius: 24px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper:   #1c1917;
+    --card:    #262220;
+    --field:   #1f1b19;
+    --ink:     #f5f5f4;
+    --ink-2:   #d6d3d1;
+    --ink-3:   #a8a29e;
+    --line:    rgba(245,240,232,0.10);
+    --line-2:  rgba(245,240,232,0.20);
+    --field-line: rgba(245,240,232,0.38);
+
+    --violet:      #a78bfa;
+    --violet-2:    #c4b5fd;
+    --violet-deep: #ddd6fe;
+    --violet-tint: rgba(167,139,250,0.14);
+    --btn:         #7c3aed;
+    --btn-hover:   #6d28d9;
+    --frame:       rgba(167,139,250,0.26);
+    --ring:        rgba(167,139,250,0.22);
+    --ring-danger: rgba(252,165,165,0.18);
+    --on-select:   #1c1917;
+
+    --danger:       #fca5a5;
+    --danger-solid: #b42318;
+    --danger-tint:  rgba(248,113,113,0.10);
+    --danger-line:  rgba(252,165,165,0.30);
+
+    --qr-bg: #f8f4ec;
+
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.30);
+    --shadow:    0 24px 56px -30px rgba(0,0,0,0.75), 0 2px 6px rgba(0,0,0,0.25);
+    --shadow-lg: 0 40px 80px -36px rgba(0,0,0,0.85), 0 2px 8px rgba(0,0,0,0.30);
+    --wash-a: rgba(139,92,246,0.15);
+    --wash-b: rgba(109,40,217,0.11);
+    --wash-c: rgba(139,92,246,0.07);
+  }
+}
+
+/* ---- base ---------------------------------------------------------------- */
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body {
+  position: relative;
+  margin: 0;
+  min-height: 100vh;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 1rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+/* the portfolio's airy violet washes, printed on the paper itself so they scroll
+   with the page and reach its foot however long the list grows */
+body::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(max(50vw, 300px) 340px at 82% 70px, var(--wash-a), transparent 70%),
+    radial-gradient(max(45vw, 260px) 320px at 6% 400px, var(--wash-b), transparent 70%),
+    radial-gradient(max(55vw, 320px) 380px at 96% calc(100% - 140px), var(--wash-c), transparent 70%);
+}
+
+[hidden] { display: none !important; }
+h1, h2, p, figure { margin: 0; }
+a { color: inherit; }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+::selection { background: var(--violet); color: var(--on-select); }
+:focus-visible { outline: 2px solid var(--violet); outline-offset: 3px; }
+
+.sr-only {
+  position: absolute !important; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
+.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+.i {
+  width: 1.1em; height: 1.1em; flex: none;
+  fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round;
+}
+/* the off-screen field the clipboard fallback copies from */
+.clip { position: fixed; top: 0; left: 0; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; pointer-events: none; }
+
+.smallcaps {
+  font-size: 0.7rem; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--ink-3); font-variant-numeric: tabular-nums; line-height: 1.3;
+}
+.eyebrow {
+  display: flex; align-items: center; gap: 0.65rem;
+  font-family: var(--sans); font-size: 0.72rem; font-weight: 600; line-height: 1.3;
+  letter-spacing: 0.18em; text-transform: uppercase; color: var(--violet);
+}
+.eyebrow::before { content: ""; width: 22px; height: 1px; background: currentColor; opacity: 0.6; }
+
+/* ---- page frame: running head, two columns, colophon ------------------------ */
+.page { width: min(100%, var(--maxw)); margin-inline: auto; padding-inline: var(--pad); }
+
+.masthead {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 0.85rem 0 0.75rem;
+  border-bottom: 3px double var(--line-2);
+}
+.brand {
+  display: inline-flex; align-items: center; min-height: 44px;
+  font-family: var(--serif); font-weight: 600; font-size: 1.15rem; letter-spacing: -0.01em;
+  text-decoration: none; border-radius: 6px;
+}
+.brand .dot { color: var(--violet); }
+.runhead { font-size: 0.68rem; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-3); }
+
+/* minmax(0, 1fr): no long URL or form control can widen the column past the page */
+.layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2rem; padding-top: clamp(2.25rem, 7vw, 4.5rem); }
+
+/* ---- intro --------------------------------------------------------------- */
+.intro h1 {
+  margin-top: 1.05rem;
+  font-family: var(--serif); font-weight: 600;
+  font-size: clamp(2.75rem, 9.5vw, 4.6rem); line-height: 1.02; letter-spacing: -0.02em;
+}
+.intro h1 em { font-style: italic; font-weight: 500; color: var(--violet); }
+.standfirst {
+  margin-top: 1.2rem; max-width: 34ch;
+  font-family: var(--serif); font-weight: 500; font-size: clamp(1.12rem, 2vw, 1.3rem); line-height: 1.5;
+  color: var(--ink-2); text-wrap: pretty;
+}
+
+/* ---- the form card ------------------------------------------------------- */
+.card {
+  position: relative; background: var(--card);
+  border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.form-card { padding: clamp(1.25rem, 4.5vw, 2rem); }
+
+.field + .field { margin-top: 1.35rem; }
+.flabel {
+  display: flex; align-items: baseline; gap: 0.45rem; margin-bottom: 0.5rem;
+  font-size: 0.82rem; font-weight: 600; line-height: 1.3; color: var(--ink-2);
+}
+.flabel .i { width: 0.95rem; height: 0.95rem; align-self: center; color: var(--violet); }
+.opt { margin-left: auto; font-family: var(--serif); font-style: italic; font-weight: 500; font-size: 0.9rem; color: var(--ink-3); }
+
+.input {
+  display: block; width: 100%; height: 3.25rem; margin: 0; padding: 0 1rem;
+  font-size: 1rem; line-height: 1.3; color: var(--ink);
+  background: var(--field); border: 1px solid var(--field-line); border-radius: 14px;
+  -webkit-appearance: none; appearance: none;
+  transition: border-color .2s, background-color .2s, box-shadow .25s var(--ease);
+}
+.input::placeholder { color: var(--ink-3); opacity: 1; }
+.input:hover { border-color: color-mix(in srgb, var(--ink) 62%, transparent); }
+/* the transparent outline turns into a real one in forced-colours mode */
+.input:focus, .affix:focus-within, .well:focus-within {
+  outline: 2px solid transparent; outline-offset: 2px;
+  background: var(--card); border-color: var(--violet);
+  box-shadow: 0 0 0 1px var(--violet), 0 0 0 5px var(--ring);
+}
+
+/* the long-URL well: the field, and a Paste button on touch screens */
+.well { display: flex; align-items: center; padding: 0; cursor: text; }
+.well input {
+  flex: 1 1 0%; width: 0; min-width: 0; height: 100%; margin: 0; padding: 0 1rem;
+  border: 0; outline: 0; background: transparent; border-radius: 14px;
+  font-size: 1rem; color: var(--ink);
+}
+.well input::placeholder { color: var(--ink-3); opacity: 1; }
+/* 44px tall inside the 50px well; the transparent border becomes its edge in forced colours.
+   The sign-in wells (Send code, Verify) use the same button. */
+.paste-btn, .well-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; flex: none;
+  height: calc(100% - 0.375rem); min-height: 44px; margin-right: 0.1875rem; padding: 0 0.85rem;
+  font-size: 0.86rem; font-weight: 600; color: var(--violet-deep); white-space: nowrap;
+  background: var(--violet-tint); border: 1px solid transparent; border-radius: 10px;
+  -webkit-tap-highlight-color: transparent;
+}
+.paste-btn .i { width: 1rem; height: 1rem; }
+.paste-btn:active, .well-btn:active { background: var(--frame); }
+.well-btn:hover { background: var(--frame); }
+.well-btn.is-busy { cursor: progress; }
+.well-btn.is-busy:hover { background: var(--violet-tint); }
+
+/* karan98.in/s/ + the ending, composed like the link it will become */
+.affix { display: flex; align-items: baseline; padding: 0; cursor: text; }
+.affix .prefix {
+  flex: none; padding-left: 1rem;
+  font-family: var(--mono); font-size: 0.92rem; color: var(--ink-3); white-space: nowrap; cursor: text;
+}
+.affix input {
+  flex: 1 1 0%; width: 0; min-width: 0; height: 100%; margin: 0; padding: 0 1rem 0 0.05rem;
+  border: 0; outline: 0; background: transparent; border-radius: 0 14px 14px 0;
+  font-family: var(--mono); font-size: 1rem; color: var(--ink);
+}
+
+.hint { margin-top: 0.5rem; font-size: 0.8rem; line-height: 1.45; color: var(--ink-3); }
+.err {
+  display: flex; align-items: flex-start; gap: 0.45rem; margin-top: 0.55rem;
+  font-size: 0.85rem; font-weight: 500; line-height: 1.45; color: var(--danger);
+}
+.err .i { width: 1rem; height: 1rem; margin-top: 0.12rem; }
+/* a long hyphenless ending ("karan98.in/s/portfolio2026resume") has no break of its own */
+.err > span { min-width: 0; overflow-wrap: anywhere; }
+/* the same slot for a word that isn't a fault in the field (the clipboard couldn't be read) */
+.err.calm { color: var(--ink-2); }
+.err.calm .i { color: var(--violet); }
+.invalid .input, .invalid .affix { border-color: var(--danger); }
+.invalid .input:focus, .invalid .affix:focus-within, .invalid .well:focus-within {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 1px var(--danger), 0 0 0 5px var(--ring-danger);
+}
+.invalid .hint { display: none; }
+
+/* how long the link lasts: a row of choices that read like small fields, the chosen one
+   in violet. The real radio covers its chip, invisibly, so clicks, keys and screen
+   readers all meet a native control. */
+.lasts { min-width: 0; margin-inline: 0; padding: 0; border: 0; }
+.lasts > legend { display: block; width: 100%; padding: 0; }
+.chips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.4rem; }
+.chip { position: relative; display: block; min-width: 0; }
+.chip input {
+  position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; margin: 0;
+  opacity: 0; cursor: pointer; -webkit-appearance: none; appearance: none;
+}
+.chip span {
+  display: flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 0.35rem;
+  font-size: 0.84rem; font-weight: 600; line-height: 1.2; color: var(--ink-2); white-space: nowrap;
+  background: var(--field); border: 1px solid var(--field-line); border-radius: 12px;
+  transition: border-color .2s, background-color .2s, color .2s;
+}
+.chip:hover span { border-color: color-mix(in srgb, var(--ink) 62%, transparent); }
+.chip input:checked + span {
+  color: var(--violet-deep); background: var(--violet-tint);
+  border-color: var(--violet); box-shadow: inset 0 0 0 1px var(--violet);
+}
+.chip input:focus-visible + span { outline: 2px solid var(--violet); outline-offset: 2px; }
+/* the form card is the measure: six across where they fit; with the owner's "Never", four */
+.form-card { container: formcard / inline-size; }
+@container formcard (min-width: 26rem) {
+  .chips { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
+@container formcard (min-width: 17rem) {
+  .chips.has-never { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+/* Custom: a number and its unit, side by side */
+.custom { display: flex; gap: 0.5rem; margin-top: 0.6rem; }
+.custom > .input { flex: 1 1 0%; width: 0; min-width: 0; }
+.select { position: relative; display: block; flex: 1 1 0%; min-width: 0; }
+.select .input { padding-right: 2.5rem; cursor: pointer; }
+.select::after {
+  content: ""; position: absolute; top: 50%; right: 1.15rem; width: 0.45rem; height: 0.45rem;
+  border-right: 1.75px solid var(--ink-2); border-bottom: 1.75px solid var(--ink-2);
+  transform: translateY(-70%) rotate(45deg); pointer-events: none;
+}
+.custom.invalid ~ .hint { display: none; }
+
+/* signing in: folds open on the first submit when no key or sign-in is known */
+.keybox { display: grid; grid-template-rows: 1fr; margin-top: 1.35rem; }
+.keybox-in { min-height: 0; overflow: hidden; margin: -12px; padding: 12px; }  /* room for the focus ring, offset included */
+.keybox-in > .field, .keybox-in > .signin { padding-top: 1.35rem; border-top: 1px solid var(--line); }
+.kb-lead { margin-bottom: 1.1rem; font-size: 0.9rem; line-height: 1.5; color: var(--ink-2); text-wrap: pretty; }
+.kb-lead a {
+  font-weight: 600; color: var(--violet); text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); text-underline-offset: 3px; border-radius: 4px;
+}
+.kb-lead a:hover { color: var(--violet-deep); text-decoration-color: currentColor; }
+/* the sign-in code: six figures, spaced like a code on paper */
+.well .code-in { font-family: var(--mono); font-size: 1.12rem; letter-spacing: 0.32em; }
+.well .code-in::placeholder { letter-spacing: normal; }
+.sent { display: flex; align-items: flex-start; gap: 0.45rem; margin-bottom: 1rem; font-size: 0.85rem; line-height: 1.45; color: var(--ink-2); }
+.sent .i { width: 1rem; height: 1rem; margin-top: 0.12rem; color: var(--violet); }
+.resend { margin: 0.3rem 0 0 -0.4rem; }
+.kb-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 1rem; margin-top: 0.3rem; }
+.kb-foot .text-btn { margin-left: -0.4rem; }
+.check {
+  display: inline-flex; align-items: center; gap: 0.65rem; min-height: 44px;
+  font-size: 0.92rem; color: var(--ink); cursor: pointer;
+}
+.check input { width: 1.15rem; height: 1.15rem; margin: 0; accent-color: var(--btn); cursor: pointer; }
+
+/* ---- buttons --------------------------------------------------------------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+  min-height: 44px; padding: 0.65rem 1.2rem;
+  font-size: 0.92rem; font-weight: 600; line-height: 1.2; white-space: nowrap; text-decoration: none;
+  color: var(--ink); background: var(--card);
+  border: 1px solid var(--line-2); border-radius: 999px;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .25s var(--ease), box-shadow .25s var(--ease), background-color .2s, border-color .2s, color .2s;
+}
+.btn .i { width: 1.05rem; height: 1.05rem; }
+.btn:hover { transform: translateY(-1px); box-shadow: var(--shadow); border-color: color-mix(in srgb, var(--violet) 45%, transparent); }
+.btn:active { transform: none; box-shadow: none; }
+.btn.primary { color: #fff; background: var(--btn); border-color: transparent; }
+.btn.primary:hover { background: var(--btn-hover); box-shadow: var(--shadow-lg); }
+.btn.danger { color: #fff; background: var(--danger-solid); border-color: transparent; }
+.btn.danger:hover { background: color-mix(in srgb, var(--danger-solid) 84%, #000); box-shadow: none; }
+.btn.sm { padding: 0.55rem 1.05rem; font-size: 0.88rem; }
+.btn[aria-disabled="true"] { cursor: progress; transform: none; box-shadow: none; }
+
+.submit { width: 100%; height: 3.25rem; margin-top: 1.6rem; font-size: 1rem; }
+.submit .i-go { transition: transform .3s var(--ease); }
+.submit:hover .i-go { transform: translateX(3px); }
+.spin {
+  display: none; width: 1rem; height: 1rem; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.35); border-top-color: #fff;
+  animation: spin .75s linear infinite;
+}
+.submit.is-busy { background: var(--btn-hover); }
+.submit.is-busy .spin { display: inline-block; }
+.submit.is-busy .i-go { display: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.text-btn {
+  display: inline-flex; align-items: center; gap: 0.45rem; min-height: 44px; padding: 0 0.4rem;
+  font-size: 0.86rem; font-weight: 600; color: var(--ink-2);
+  background: none; border: 0; border-radius: 10px;
+  text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 4px;
+  transition: color .2s, text-decoration-color .2s;
+}
+.text-btn:hover { color: var(--violet-deep); text-decoration-color: currentColor; }
+.text-btn.is-busy { cursor: progress; }
+.text-btn .i { width: 1rem; height: 1rem; }
+
+/* where the owner key in use lives, with a way to drop it */
+.keystate {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0 0.45rem;
+  margin: 0.7rem 0 -0.4rem; font-size: 0.84rem; line-height: 1.4; color: var(--ink-3); text-align: center;
+}
+.keystate-text .i { display: inline-block; width: 1rem; height: 1rem; margin-right: 0.4rem; vertical-align: -0.2em; color: var(--violet); }
+.keystate .who { font-weight: 600; color: var(--ink-2); overflow-wrap: anywhere; }
+.keystate .text-btn { font-size: 0.84rem; }
+
+.icon-btn {
+  display: inline-grid; place-items: center; width: 44px; height: 44px; padding: 0;
+  color: var(--ink-2); background: transparent; border: 0; border-radius: 50%;
+  transition: background-color .2s, color .2s;
+}
+.icon-btn .i { width: 1.15rem; height: 1.15rem; }
+.icon-btn:hover { color: var(--violet-deep); background: var(--violet-tint); }
+.icon-btn.danger:hover { color: var(--danger); background: var(--danger-tint); }
+.icon-btn.is-done { color: var(--violet); }
+
+/* form-level notices: not switched on yet, or a failure with a retry */
+.note {
+  display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.6rem 0.75rem;
+  margin-top: 1rem; padding: 0.85rem 0.95rem 0.85rem 1rem;
+  font-size: 0.9rem; line-height: 1.5; color: var(--ink);
+  background: var(--danger-tint); border: 1px solid var(--danger-line); border-radius: 16px;
+}
+.note > .i { width: 1.1rem; height: 1.1rem; margin-top: 0.15rem; color: var(--danger); }
+.note-text { flex: 1 1 10rem; align-self: center; }
+.note .btn { margin-left: auto; }
+.note.calm { background: var(--violet-tint); border-color: var(--frame); }
+.note.calm > .i { color: var(--violet); }
+
+/* ---- the keepsake: the short link, set large ------------------------------- */
+.keepsake {
+  position: relative; isolation: isolate; margin-top: 1.25rem;
+  padding: clamp(1.4rem, 4.5vw, 2.1rem);
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+}
+/* an inset hairline frame, like a letterpress card */
+.keepsake::before {
+  content: ""; position: absolute; inset: 7px; pointer-events: none;
+  border: 1px solid var(--frame); border-radius: calc(var(--radius) - 7px);
+}
+.keepsake::after {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; border-radius: inherit;
+  background: radial-gradient(60% 70% at 100% 0%, color-mix(in srgb, var(--violet-2) 10%, transparent), transparent 70%);
+}
+.keepsake { container: keepsake / inline-size; }
+.ks-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.4rem 1rem; }
+.ks-body {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center;
+  gap: 1rem 1.5rem; margin-top: 1rem;
+}
+.short {
+  position: relative; isolation: isolate;
+  display: block; width: fit-content; max-width: 100%; color: var(--ink); text-decoration: none; border-radius: 8px;
+}
+/* the highlighter that sweeps under the link when it is copied */
+.short::before {
+  content: ""; position: absolute; z-index: -1; inset: 0.1em -0.4em; border-radius: 8px;
+  background: var(--violet-tint); transform: scaleX(0); transform-origin: 0 50%; opacity: 0;
+  transition: opacity .35s ease, transform 0s .35s;
+}
+.short.is-copied::before { transform: none; opacity: 1; transition: transform .34s var(--ease), opacity .1s; }
+.short .host { display: block; font-family: var(--mono); font-size: 0.88rem; letter-spacing: 0.01em; color: var(--ink-2); }
+/* upright Playfair with lining figures: a code must read unambiguously (5 vs z, v vs u) */
+.short .code {
+  display: block; margin-top: 0.1rem;
+  font-family: var(--serif); font-style: normal; font-weight: 600; font-variant-numeric: lining-nums;
+  font-size: 2.3rem; font-size: clamp(2.1rem, 11cqi, 3.25rem); line-height: 1.08; letter-spacing: -0.005em;
+  color: var(--violet); overflow-wrap: anywhere;
+  text-decoration: underline; text-decoration-color: transparent;
+  text-decoration-thickness: 1px; text-underline-offset: 0.14em;
+  transition: text-decoration-color .2s;
+}
+.short:hover .code { text-decoration-color: currentColor; }
+.short.is-long .code { font-size: 1.7rem; font-size: clamp(1.5rem, 7cqi, 2.2rem); line-height: 1.15; }
+.ks-link { min-width: 0; }
+/* when the link stops working, set under it like a caption */
+.ks-exp { display: flex; align-items: flex-start; gap: 0.4rem; margin-top: 0.6rem; font-size: 0.86rem; line-height: 1.4; color: var(--ink-2); }
+.ks-exp .i { width: 1rem; height: 1rem; margin-top: 0.1rem; color: var(--violet); }
+.ks-exp .when { white-space: nowrap; }
+
+/* where the short link leads: a full-width caption line, the host set in ink */
+.orig { display: flex; align-items: baseline; gap: 0.6rem; min-width: 0; margin-top: 1.1rem; font-size: 0.88rem; }
+.orig .smallcaps { flex: none; }
+/* two lines, breaking after / ? & # or = where it can, so phones show more than the host */
+.orig-url {
+  min-width: 0; overflow: hidden; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+}
+.o-host { color: var(--ink); font-weight: 500; }
+.o-path { color: var(--ink-3); }
+
+.ks-qr { display: grid; justify-items: center; gap: 0.2rem; }
+.qr {
+  width: 124px; aspect-ratio: 1; overflow: hidden;
+  background: var(--qr-bg); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-sm);
+}
+.qr svg { display: block; width: 100%; height: 100%; }
+.qr .qr-bg { fill: var(--qr-bg); }
+.qr .qr-fg { fill: var(--qr-ink); }
+/* ↓ PNG · SVG under the plate */
+.qr-save { display: flex; align-items: center; justify-content: center; gap: 0 0.1rem; color: var(--ink-3); }
+.qr-save > .i { width: 0.95rem; height: 0.95rem; margin-right: 0.15rem; }
+.qr-save .text-btn { justify-content: center; min-width: 44px; padding: 0 0.3rem; font-size: 0.8rem; letter-spacing: 0.04em; }
+.qr-save .sep { color: var(--line-2); }
+
+.ks-actions {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem;
+  margin-top: 1.1rem; padding-top: 1.2rem; border-top: 1px solid var(--line);
+}
+/* narrow cards: the buttons share the row, "Shorten another" sits centred beneath */
+.ks-actions .btn { flex: 1 1 auto; }
+.ks-actions .again { flex: 1 0 100%; justify-content: center; margin-bottom: -0.35rem; }
+@container keepsake (min-width: 26rem) {
+  .ks-actions .btn { flex: 0 0 auto; }
+  .ks-actions .again { flex: 0 0 auto; margin: 0 0 0 auto; }
+}
+@container keepsake (max-width: 20rem) {
+  .ks-body { column-gap: 1rem; }
+  .qr { width: 108px; }
+}
+/* very narrow cards: the code takes the full width and the QR sits below it */
+@container keepsake (max-width: 16rem) {
+  .ks-body { grid-template-columns: minmax(0, 1fr); }
+  .ks-qr { grid-template-columns: auto auto; justify-content: start; align-items: center; gap: 0 1rem; }
+  .short .code { font-size: 2.6rem; }
+  .qr { width: 112px; }
+  .ks-actions .btn { padding-inline: 0.8rem; }
+}
+/* shown when the browser wouldn't copy: the link is selected instead */
+.ks-msg { margin-top: 0.8rem; font-size: 0.84rem; line-height: 1.45; color: var(--ink-2); }
+/* label swap with a fixed width, so "Copied" never nudges its neighbours */
+.swap { display: inline-grid; }
+.swap > * { grid-area: 1 / 1; justify-self: start; }
+.swap .b, .is-done .swap .a, .is-busy .swap .a { visibility: hidden; }
+.is-done .swap .b, .is-busy .swap .b { visibility: visible; }
+
+/* ---- recent links on this device ------------------------------------------ */
+.recent-head {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.25rem 1rem;
+  padding-bottom: 0.85rem; border-bottom: 1px solid var(--line-2);
+}
+.recent h2 { font-family: var(--serif); font-weight: 600; font-size: 1.45rem; line-height: 1.2; letter-spacing: -0.005em; }
+.recent h2 em { font-style: italic; font-weight: 500; font-size: 0.8em; color: var(--ink-3); }
+.recent h2:focus { outline: none; }
+
+.r-list { margin: 0; padding: 0; list-style: none; }
+.r-item {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.15rem 0.5rem;
+  padding: 0.8rem 0; border-bottom: 1px solid var(--line);
+}
+.r-main { position: relative; min-width: 0; }
+.r-short { display: inline-block; max-width: 100%; line-height: 1.3; color: var(--ink); text-decoration: none; overflow-wrap: anywhere; border-radius: 6px; }
+/* the row's whole text block opens the link, a target well over 44px tall; the copy
+   and delete buttons sit outside it, in their own column */
+.r-short::after { content: ""; position: absolute; inset: -0.8rem 0; }
+.confirming .r-short::after { content: none; }
+.r-short .host { font-family: var(--mono); font-size: 0.8rem; color: var(--ink-3); }
+.r-short .code { font-family: var(--serif); font-style: normal; font-weight: 600; font-variant-numeric: lining-nums; font-size: 1.3rem; color: var(--violet); }
+.r-short:hover .code { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.14em; }
+/* age · expiry · destination; the destination takes a line of its own when the row is narrow */
+.r-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.6rem; min-width: 0; margin-top: 0.15rem; font-size: 0.82rem; color: var(--ink-3); overflow: hidden; }
+.r-time, .r-exp { flex: none; font-size: 0.66rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; }
+/* the dot sits in the gap before the expiry: when the expiry starts a line of its own, it
+   falls outside the line and is clipped away. Above the row link's overlay, like the
+   destination, so its tooltip (the exact time) shows. */
+.r-exp { position: relative; z-index: 1; }
+.r-time + .r-exp::before { content: "·"; content: "·" / ""; position: absolute; left: -0.6rem; width: 0.6rem; text-align: center; letter-spacing: 0; }
+.r-exp.is-expired { color: var(--danger); }
+/* an expired link no longer leads anywhere: its code fades back */
+.r-item.is-expired .r-short .code { color: var(--ink-3); }
+/* above the row link's overlay, so its tooltip (the full destination) shows and it can be selected */
+.r-orig { position: relative; z-index: 1; flex: 1 1 9rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.r-orig .o-host { color: var(--ink-2); font-weight: 500; }
+.r-actions { display: flex; margin-right: -0.5rem; }
+
+.r-item.confirming {
+  margin-inline: -0.85rem; padding-inline: 0.85rem; border-radius: 16px;
+  background: var(--danger-tint); border-bottom-color: transparent;
+}
+.confirming .r-actions { display: none; }
+.r-confirm { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1rem; margin-top: 0.6rem; }
+.r-ask { flex: 1 1 14rem; font-size: 0.88rem; line-height: 1.45; color: var(--ink); }
+.r-btns { display: flex; gap: 0.5rem; margin-left: auto; }
+/* above the row link's overlay too, which reaches into it: a click on the message is not a click on the link */
+.r-msg { position: relative; z-index: 1; grid-column: 1 / -1; font-size: 0.82rem; font-weight: 500; color: var(--danger); }
+.r-msg.calm { color: var(--ink-2); }
+.r-msg .text-btn { margin-left: -0.4rem; font-size: 0.82rem; }
+.r-item.is-busy { opacity: 0.75; }
+.r-more { display: flex; justify-content: center; padding-top: 0.5rem; }
+
+.empty { display: grid; justify-items: center; padding: 2.3rem 1rem 2.1rem; text-align: center; border-bottom: 1px solid var(--line); }
+/* a printer's section break: hairline, star, hairline */
+.orn-rule { display: flex; align-items: center; gap: 0.85rem; color: var(--violet); }
+.orn-rule::before, .orn-rule::after { content: ""; width: 2.75rem; height: 1px; background: var(--line-2); }
+.orn { width: 18px; height: 18px; }
+.e-title { margin-top: 0.7rem; font-family: var(--serif); font-style: italic; font-weight: 500; font-size: 1.25rem; color: var(--ink); }
+.e-text { margin-top: 0.2rem; max-width: 30ch; font-size: 0.9rem; color: var(--ink-3); }
+
+/* ---- colophon ---------------------------------------------------------------- */
+.colophon {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 1.5rem;
+  margin-top: clamp(3.5rem, 9vw, 6rem); padding: 0.6rem 0 1.6rem;
+  border-top: 1px solid var(--line); font-size: 0.85rem; color: var(--ink-3);
+}
+.colophon a { display: inline-flex; align-items: center; gap: 0.45rem; min-height: 44px; color: var(--ink-2); text-decoration: none; border-radius: 8px; }
+.colophon a:hover { color: var(--violet-deep); }
+.colophon .i { width: 1rem; height: 1rem; transition: transform .25s var(--ease); }
+.colophon a:hover .i { transform: translateX(-3px); }
+/* the small print: what the shortener records, on a line of its own (the padding keeps
+   its measure short without letting it share the line above) */
+.fineprint {
+  flex: 0 0 100%; margin: 0.4rem 0 0; padding-right: max(0px, calc(100% - 64ch));
+  font-size: 0.78rem; line-height: 1.55; color: var(--ink-3); text-wrap: pretty;
+}
+
+/* ---- wide screens: the intro and the index on the left, the tool on the right --- */
+@media (min-width: 960px) {
+  body { font-size: 1.0625rem; }
+  .layout {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    grid-template-rows: auto 1fr;
+    grid-template-areas: "intro tool" "recent tool";
+    column-gap: clamp(3rem, 6vw, 5.5rem); row-gap: 3.25rem; align-items: start;
+  }
+  .intro { grid-area: intro; }
+  .tool { grid-area: tool; }
+  .recent { grid-area: recent; }
+  .qr { width: 136px; }
+}
+
+/* ---- motion: quiet, and none at all when reduced motion is asked for ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  /* only the intro rises: the form is the main control and paints at once */
+  .intro { animation: rise .55s var(--ease) both; }
+  .keybox.opening { animation: unfold .42s var(--ease) both; }
+  .keepsake.enter { animation: rise .5s var(--ease) both; }
+  .keepsake.enter .code { animation: ink .8s .08s var(--ease) backwards; }
+  .r-item.is-new { animation: rise .5s var(--ease) both; }
+  .r-item.leaving { animation: leave .22s var(--ease) both; }
+}
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes unfold { from { grid-template-rows: 0fr; opacity: 0; } to { grid-template-rows: 1fr; opacity: 1; } }
+@keyframes ink { from { clip-path: inset(-0.2em 100% -0.3em 0); } to { clip-path: inset(-0.2em -0.4em -0.3em 0); } }
+@keyframes leave { to { opacity: 0; transform: translateX(-8px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important; animation-delay: 0s !important; animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important; scroll-behavior: auto !important;
+  }
+  .submit.is-busy .spin { display: none; }
+  .submit.is-busy .i-go { display: inline-block; }
+}
+
+/* Windows High Contrast and other forced colours: keep the cards' edges visible */
+@media (forced-colors: active) {
+  /* plain rows keep just their separators; only an open "Delete?" row, with its padding, gets a box */
+  .card, .keepsake, .r-item.confirming { border: 1px solid CanvasText; }
+  .keepsake::before { border-color: CanvasText; }
+  .short::before { display: none; }
+  /* the chosen length must show without its tint */
+  .chip input:checked + span { forced-color-adjust: none; color: HighlightText; background: Highlight; border-color: Highlight; box-shadow: none; }
+  .select::after { border-color: CanvasText; }
+}

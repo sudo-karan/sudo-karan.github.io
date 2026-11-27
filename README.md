@@ -37,6 +37,16 @@ assets/Jaskaran_Singh_Resume.pdf
 .nojekyll               # serve files as-is (skip Jekyll)
 ```
 
+## Link shortener
+
+**karan98.in/urlshort** makes `karan98.in/s/<code>` short links that anyone can
+open until they expire (24 hours unless the maker chooses 10 minutes to 30 days, or,
+with the owner key, never). Only
+the owner key, or an email on the owner's allow list (verified by a one-time code), can
+make them, and every link made and every visit is logged to the contact form's Google
+Sheet. It runs on Cloudflare Pages Functions with a KV namespace and a D1 database; see
+[`URLSHORT_SETUP.md`](URLSHORT_SETUP.md) for the one-time setup.
+
 ## Local preview
 
 ```bash

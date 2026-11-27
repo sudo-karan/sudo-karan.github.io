@@ -31,13 +31,16 @@ every message to a **Google Sheet** and **emails** you.
 |---|---|---|
 | Turnstile **site key** | `assets/js/data.js` | yes (by design) |
 | Turnstile **secret key** | Apps Script property `TURNSTILE_SECRET` (verifies both paths) | no |
-| RSA **public key** | `assets/js/data.js` (`contact.publicKey`) | yes (by design) |
-| RSA **private key** | Cloudflare Function env `PRIVATE_KEY` — the **only** env var it needs | **no** |
+| RSA **public key** | `assets/js/data.js` (`contact.publicKey`), and a copy in `assets/js/urlshort.js` (`SITE_KEY`): the link shortener seals its requests with it too | yes (by design) |
+| RSA **private key** | Cloudflare Function env `PRIVATE_KEY` — the **only** env var it needs; the link shortener's Function opens its sealed requests with it too | **no** |
 | `OBFUSCATION_KEY` | `OBF_KEY` in `app.js`, the Function, and Apps Script property (same value) | yes-ish (obscurity) |
 | `ICTD_WHITELIST` | Apps Script property only (the Odisha forest map's sign-in, below) | **no** |
 | `ICTD_GATE_SECRET` | Apps Script property, and the map's Cloudflare env `ICTD_GATE_SECRET` (same value) | **no** |
 | `PHD_WHITELIST` | Apps Script property only (the PhD explorer's sign-in, below) | **no** |
 | `PHD_GATE_SECRET` | Apps Script property, and the explorer's Cloudflare env `PHD_GATE_SECRET` (same value, not ICTD's) | **no** |
+| `URLSHORT_KEY` | Cloudflare secret on this project: the link shortener's owner key ([`URLSHORT_SETUP.md`](URLSHORT_SETUP.md)) | **no** |
+| `URLSHORT_WHITELIST` | Apps Script property only: the addresses allowed to make short links | **no** |
+| `URLSHORT_GATE_SECRET` | Apps Script property, and a Cloudflare secret on this project (same value, not ICTD's or PhD's): signs the shortener's email passes and its log key | **no** |
 
 > The Function only reads **`PRIVATE_KEY`** now. The old `TURNSTILE_SECRET` /
 > `APPS_SCRIPT_URL` / `SHARED_SECRET` Cloudflare env vars are **unused** (harmless to
@@ -47,7 +50,17 @@ every message to a **Google Sheet** and **emails** you.
 The RSA keypair for this site is already generated — the **public** key is committed
 in `data.js`; the **private** key was handed over separately to paste into the
 Cloudflare `PRIVATE_KEY` env var. To rotate it, generate a new pair (Web Crypto
-`RSA-OAEP`, 2048, SHA-256; export public as SPKI base64, private as PKCS8 base64).
+`RSA-OAEP`, 2048, SHA-256; export public as SPKI base64, private as PKCS8 base64), then, in
+this order:
+1. Set the new `PRIVATE_KEY` in Cloudflare. The live deployment keeps the old one until the
+   next deployment, so nothing breaks yet.
+2. Straight away, push one commit that puts the new public key in **both** `data.js`
+   (`contact.publicKey`) and `assets/js/urlshort.js` (`SITE_KEY`). Its deployment is the first
+   with both new halves.
+3. If the secret was set after that deployment started, retry it (**Deployments → ⋯ → Retry
+   deployment**). Until both halves match, the link shortener answers "Something went wrong on
+   the server" to every new link, while the contact form quietly uses its fallback path. A tab
+   left open from before needs a reload.
 
 ---
 
@@ -78,6 +91,10 @@ Cloudflare `PRIVATE_KEY` env var. To rotate it, generate a new pair (Web Crypto
      newline-separated, compared lower-case. See the last section.
    - `PHD_GATE_SECRET` — another long random string, not the map's; **must match** the
      explorer's Cloudflare env `PHD_GATE_SECRET`. See the last section.
+   - `URLSHORT_WHITELIST`, `URLSHORT_GATE_SECRET` and the optional `URLSHORT_PASS_HOURS` and
+     `URLSHORT_TAB_ROWS` —
+     for the link shortener's makers and its log; see [`URLSHORT_SETUP.md`](URLSHORT_SETUP.md)
+     (which also has you run `installShortLinkSync` once).
 4. **Deploy → New deployment → Web app** — *Execute as:* **Me**, *Who has access:*
    **Anyone** → run `doPost` once, **Allow** all permissions → copy the **`/exec`** URL.
 

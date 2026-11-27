@@ -2,7 +2,8 @@
    Cloudflare Pages middleware — runs for EVERY request to karan98.in.
 
    This repo (the portfolio) is a single-page site. It owns "/", "/assets/*",
-   "/api/*" and "/.well-known/*". GitHub Pages (sudo-karan.github.io) hosts the
+   "/api/*", "/.well-known/*", and the link shortener's "/urlshort" and "/s/*".
+   GitHub Pages (sudo-karan.github.io) hosts the
    same site AND separate project folders. The goal: every project at
    sudo-karan.github.io/<name> is reachable at karan98.in/<name> with the URL left
    on karan98.in. Any project you publish works automatically; no per-project rule
@@ -49,13 +50,20 @@ function phdMovedTo(url) {
 }
 
 // Paths THIS repo serves itself — always answered locally, never proxied.
-// (A project literally named "assets", "api" or ".well-known" would collide,
-// but none do.)
+// (A project literally named "assets", "api", ".well-known", "s" or "urlshort"
+// would collide, but none do.)
 function isOwnPath(pathname) {
   if (pathname === "/") return true;
   if (pathname.startsWith("/assets/")) return true;
   if (pathname.startsWith("/api/")) return true;
   if (pathname.startsWith("/.well-known/")) return true;
+  // The link shortener: its page (urlshort.html; other spellings of its address were
+  // redirected before this) and the short links themselves (functions/s/[code].js),
+  // which shouldn't wait on a trip to GitHub first.
+  if (pathname === "/urlshort") return true;
+  // Any case: Pages routes /S/<code> to the same Function, and a link printed
+  // in capitals (KARAN98.IN/S/CV) arrives like that.
+  if (/^\/s\//i.test(pathname)) return true;
   // A top-level file — one path segment with an extension — is this repo's own
   // static file: /index.html, /404.html, /robots.txt, /sitemap.xml,
   // /favicon.ico, /site.webmanifest, etc. GitHub Pages projects are always
@@ -64,9 +72,38 @@ function isOwnPath(pathname) {
   return false;
 }
 
+// The shortener's page has one address. _headers keeps other sites from framing it,
+// but its rules match the path exactly as sent, while the file is found after decoding
+// it: /%75rlshort, //urlshort, /x/..%2furlshort or /urlshort.html%2f. reach the same
+// page without those headers (or, proxied, as the mirror's copy). So every spelling of
+// it redirects to /urlshort itself. The path is resolved twice: segment by segment, as
+// the file lookup does (it drops "." and a trailing "/."), and by URL rules, as a
+// browser would. A path the URL parser refuses (a tab after the first slash, say) is
+// simply not an alias: nothing here may throw, or every such request would be a 500.
+const URLSHORT_PATH = /^\/urlshort(?:\.html)?$/i;
+function isUrlshortAlias(url) {
+  if (url.pathname === "/urlshort") return false;
+  let p = url.pathname;
+  try { p = decodeURIComponent(p); } catch (e) { /* keep it as sent */ }
+  const segs = [];
+  for (const s of p.split(/[\\/]+/)) {
+    if (s === "..") segs.pop();
+    else if (s && s !== ".") segs.push(s);
+  }
+  if (URLSHORT_PATH.test("/" + segs.join("/"))) return true;
+  try {
+    const q = new URL(p.replace(/[\t\n\r]/g, "").replace(/[\\/]+/g, "/"), url.origin).pathname;
+    return URLSHORT_PATH.test(q.replace(/\/$/, ""));
+  } catch (e) {
+    return false;
+  }
+}
+
 export async function onRequest(context) {
   const { request, next } = context;
   const url = new URL(request.url);
+
+  if (isUrlshortAlias(url)) return Response.redirect(url.origin + "/urlshort" + url.search, 308);
 
   const moved = movedTo(url);
   if (moved) return Response.redirect(moved, 302);

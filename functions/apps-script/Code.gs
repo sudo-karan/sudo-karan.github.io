@@ -35,6 +35,17 @@
                 over { email, exp, aud: 'phd' }, signed with PHD_GATE_SECRET.
    It lets nobody in (not-set-up) if PHD_GATE_SECRET is missing or equals ICTD_GATE_SECRET.
 
+   With &app=urlshort the same protocol as the PhD explorer's serves the link shortener
+   (karan98.in/urlshort, in this repository), under the action names send-code and
+   check-code, and every answer carries app: 'urlshort' (see urlshortAnswer): codes go only
+   to URLSHORT_WHITELIST, answers don't say who is listed, and a right code gets
+   { verified: true, token, exp }: the token over { email, exp, aud: 'urlshort' }, signed
+   with URLSHORT_GATE_SECRET, good for URLSHORT_PASS_HOURS (default 24). Nobody gets one
+   (not-set-up) if URLSHORT_GATE_SECRET is missing or equals ICTD's or PhD's.
+   syncShortLinks() pulls the shortener's log (links made and deleted, every visit) from
+   https://karan98.in/api/urlshort/log into the "Short links" and "Link visits" sheets;
+   installShortLinkSync() runs it every 5 minutes.
+
    A single FIELDS list is the source of truth for BOTH the Sheet columns and the
    email table.
 
@@ -50,6 +61,12 @@
      ICTD_GATE_SECRET  - must equal the map's Cloudflare env ICTD_GATE_SECRET
      PHD_WHITELIST     - addresses allowed into the PhD explorer, comma- or newline-separated
      PHD_GATE_SECRET   - must equal the explorer's Cloudflare env PHD_GATE_SECRET, and not ICTD's
+     URLSHORT_WHITELIST   - addresses allowed to make short links, comma- or newline-separated
+     URLSHORT_GATE_SECRET - must equal the shortener's Cloudflare secret URLSHORT_GATE_SECRET,
+                            and not ICTD's or PhD's
+     URLSHORT_PASS_HOURS  - (optional) how long a shortener pass lasts, 1–720 hours (default 24)
+     URLSHORT_TAB_ROWS    - (optional) rows each shortener log tab keeps, newest first,
+                            1,000–200,000 (default 100,000)
 
    Deploy: Web app · Execute as: Me · Who has access: Anyone.
    After pasting: run doPost once → Allow all permissions → Deploy → New version.
@@ -163,20 +180,28 @@ function doPost(e) {
       doNotTrack: m.doNotTrack, bot: 'No', referer: m.referer, pageUrl: m.pageUrl, userAgent: m.userAgent
     };
 
-    var ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
-    var sh = ss.getSheets()[0];
-    var header = FIELDS.map(function (fld) { return fld[0]; });
-    var lastRow = sh.getLastRow();
-    if (lastRow === 0) {
-      sh.appendRow(header);
-    } else if (lastRow === 1) {
-      var have = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
-      if (have.length !== header.length || have[0] !== header[0]) {
-        sh.getRange(1, 1, 1, have.length).clearContent();
-        sh.getRange(1, 1, 1, header.length).setValues([header]);
+    // The row and the email don't wait on each other: a Sheet that refuses the row (full,
+    // say) still lets the message reach the inbox, and a failed email still leaves the row.
+    var stored = false, mailed = false;
+    try {
+      var ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
+      var sh = ss.getSheets()[0];
+      var header = FIELDS.map(function (fld) { return fld[0]; });
+      var lastRow = sh.getLastRow();
+      if (lastRow === 0) {
+        sh.appendRow(header);
+      } else if (lastRow === 1) {
+        var have = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+        if (have.length !== header.length || have[0] !== header[0]) {
+          sh.getRange(1, 1, 1, have.length).clearContent();
+          sh.getRange(1, 1, 1, header.length).setValues([header]);
+        }
       }
+      sh.appendRow(FIELDS.map(function (fld) { var v = rec[fld[1]]; return v == null ? '' : sheetSafe(v); }));
+      stored = true;
+    } catch (eS) {
+      console.error('doPost: the Sheet refused the message: ' + eS);
     }
-    sh.appendRow(FIELDS.map(function (fld) { var v = rec[fld[1]]; return v == null ? '' : v; }));
 
     var html = '<h2 style="font-family:Arial,sans-serif;color:#4c1d95">New message from karan98.in</h2>' +
       '<table cellpadding="6" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px">';
@@ -188,14 +213,20 @@ function doPost(e) {
     });
     html += '</table>';
 
-    MailApp.sendEmail({
-      to: recipient,
-      replyTo: f.email || recipient,
-      subject: 'New message: ' + (f.subject || '(no subject)'),
-      htmlBody: html,
-      name: 'karan98.in contact form'
-    });
+    try {
+      MailApp.sendEmail({
+        to: recipient,
+        replyTo: f.email || recipient,
+        subject: 'New message: ' + (f.subject || '(no subject)'),
+        htmlBody: html,
+        name: 'karan98.in contact form'
+      });
+      mailed = true;
+    } catch (eM) {
+      console.error('doPost: the notification email failed: ' + eM);
+    }
 
+    if (!stored && !mailed) return out({ ok: false, error: 'not-saved' });
     return out({ ok: true });
   } catch (err) {
     return out({ ok: false, error: String(err) });
@@ -209,6 +240,7 @@ function doGet(e) {
   var action = p.action;
   var result;
   if (p.app === PHD_APP) return respond(phdAnswer(action, p.email, p.code), p.callback);
+  if (p.app === URLSHORT_APP) return respond(urlshortAnswer(action, p.email, p.code), p.callback);
   if (action === 'send-otp') result = sendOtp(p.email, p.flow, p.app);
   else if (action === 'verify-otp') result = verifyOtp(p.email, p.code, p.app);
   else result = { ok: true, note: 'POST only' };
@@ -416,23 +448,6 @@ function phdListed(email) {
   return raw.split(/[,\r\n]+/).some(function (x) { return normEmail(x) === email; });
 }
 
-// What otpReserve would answer, without taking a slot: the answer for an address not on the list.
-function phdQuotaOpen() {
-  if (MailApp.getRemainingDailyQuota() <= 15) return false;
-  var cap = parseInt(PropertiesService.getScriptProperties().getProperty('OTP_DAILY_CAP') || '85', 10) || 85;
-  var lock = LockService.getScriptLock();
-  try { lock.waitLock(3000); } catch (e) { return false; }
-  try {
-    var today = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyyMMdd');
-    var q;
-    try { q = JSON.parse(PropertiesService.getScriptProperties().getProperty('otp_quota') || '{}'); } catch (e2) { q = {}; }
-    if (!q || q.date !== today) return true;
-    return q.count < cap;
-  } finally {
-    lock.releaseLock();
-  }
-}
-
 // This code opens a gate, so it comes from getUuid rather than Math.random.
 function phdCode() {
   var d = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid(), Utilities.Charset.UTF_8);
@@ -484,7 +499,9 @@ function phdSendNow(email, now) {
   if (rl.count >= 3) {
     return { ok: false, reason: 'rate-limit', retryMins: Math.max(1, Math.ceil((3600000 - elapsed) / 60000)) };
   }
-  if (!(listed ? otpReserve() : phdQuotaOpen())) return { ok: false, reason: 'quota' };
+  // A slot is taken whether or not the address is listed: if only a listed one took it,
+  // the next answer to anyone could show what this one was.
+  if (!otpReserve()) return { ok: false, reason: 'quota' };
   var held = { tries: 0, exp: now + 600000 }; // without a code, a decoy: no code matches it
   if (listed) {
     held.code = phdCode();
@@ -527,7 +544,302 @@ function phdVerify(email, code) {
   }
 }
 
+/* ------------- the link shortener's makers (app=urlshort, karan98.in/urlshort) ------------- */
+
+// The PhD explorer's protocol, with its own list, secret, codes and hourly limits; the
+// daily cap is shared. A right code gets a pass the shortener's Function checks:
+// { email, exp, aud: 'urlshort' } signed with URLSHORT_GATE_SECRET, good for
+// URLSHORT_PASS_HOURS (default 24), so a maker isn't sent a code for every link.
+var URLSHORT_APP = 'urlshort';
+var URLSHORT_NS = 'urlshort_'; // cache-key prefix: the shortener's codes and hourly limits
+
+// The page asks with send-code and check-code, not send-otp and verify-otp. A script from
+// before the shortener (not updated yet, or rolled back) would hand those two on to the
+// contact form's codes and email anyone a code that signs nobody in; these names it doesn't
+// know, so it sends nothing and answers { ok: true, note: 'POST only' }. Every answer from
+// here carries app: 'urlshort' (listed or not, so it says nothing about the list), which is
+// how the page tells the two apart and says signing in isn't switched on yet.
+function urlshortAnswer(action, email, code) {
+  var a = action === 'send-code' ? urlshortSend(email)
+    : action === 'check-code' ? urlshortVerify(email, code)
+    : { ok: false, reason: 'bad-request' };
+  a.app = URLSHORT_APP;
+  return a;
+}
+
+// Missing, blank, or the same as the map's or the explorer's: then nobody gets a pass.
+function urlshortSecret() {
+  var props = PropertiesService.getScriptProperties();
+  var secret = String(props.getProperty('URLSHORT_GATE_SECRET') || '').trim();
+  var ictd = String(props.getProperty('ICTD_GATE_SECRET') || '').trim();
+  var phd = String(props.getProperty('PHD_GATE_SECRET') || '').trim();
+  return secret && secret !== ictd && secret !== phd ? secret : '';
+}
+
+// Read on every request, so that the list changes with no new deployment. Checked at
+// verify too, so that taking an address off the list stops new passes at once.
+function urlshortListed(email) {
+  if (!validEmail(email)) return false;
+  var raw = PropertiesService.getScriptProperties().getProperty('URLSHORT_WHITELIST') || '';
+  return raw.split(/[,\r\n]+/).some(function (x) { return normEmail(x) === email; });
+}
+
+function urlshortPassHours() {
+  var h = parseInt(PropertiesService.getScriptProperties().getProperty('URLSHORT_PASS_HOURS') || '24', 10);
+  return Math.min(720, Math.max(1, h || 24));
+}
+
+function urlshortMail(email, code) {
+  return {
+    to: email,
+    subject: 'Your code for making short links on karan98.in',
+    body: 'Your code to make short links on karan98.in is:\n\n    ' + code +
+      '\n\nIt expires in 10 minutes. If you didn’t request this, you can safely ignore this email.\n\n— karan98.in',
+    name: 'karan98.in short links'
+  };
+}
+
+// As phdToken, with aud 'urlshort' and the pass's own lifetime.
+function urlshortToken(email, secret, exp) {
+  var utf8 = Utilities.Charset.UTF_8;
+  var claim = JSON.stringify({ email: email, exp: exp, aud: URLSHORT_APP });
+  var payload = Utilities.base64EncodeWebSafe(claim, utf8).replace(/=+$/, '');
+  var sig = Utilities.computeHmacSha256Signature(payload, secret, utf8);
+  return payload + '.' + Utilities.base64EncodeWebSafe(sig).replace(/=+$/, '');
+}
+
+function urlshortSend(email) {
+  var start = Date.now();
+  var answer = urlshortSendNow(normEmail(email), start);
+  var wait = PHD_ANSWER_MS - (Date.now() - start);
+  if (wait > 0) Utilities.sleep(wait);
+  return answer;
+}
+
+// As phdSendNow: the same answer whether or not the address is listed.
+function urlshortSendNow(email, now) {
+  if (!validEmail(email)) return { ok: false, reason: 'bad-email' };
+  if (!urlshortSecret()) return { ok: false, reason: 'not-set-up' };
+  var listed = urlshortListed(email);
+  var cache = CacheService.getScriptCache();
+  var h = otpHash(email);
+  var rl;
+  try { rl = JSON.parse(cache.get(URLSHORT_NS + 'rl_' + h) || 'null'); } catch (e) { rl = null; }
+  if (!rl || (now - rl.first) >= 3600000) rl = { count: 0, first: now };
+  var elapsed = now - rl.first;
+  if (rl.count >= 3) {
+    return { ok: false, reason: 'rate-limit', retryMins: Math.max(1, Math.ceil((3600000 - elapsed) / 60000)) };
+  }
+  if (!otpReserve()) return { ok: false, reason: 'quota' }; // listed or not, as phdSendNow
+  var held = { tries: 0, exp: now + 600000 }; // without a code, a decoy: no code matches it
+  if (listed) {
+    held.code = phdCode();
+    try { MailApp.sendEmail(urlshortMail(email, held.code)); } catch (err) { /* not reported: see phdSendNow */ }
+  }
+  rl.count += 1;
+  cache.put(URLSHORT_NS + 'rl_' + h, JSON.stringify(rl), Math.max(60, Math.ceil((3600000 - elapsed) / 1000)));
+  cache.put(URLSHORT_NS + 'code_' + h, JSON.stringify(held), 600);
+  return { ok: true, remaining: 3 - rl.count };
+}
+
+// As phdVerify, under the script lock.
+function urlshortVerify(email, code) {
+  email = normEmail(email);
+  code = String(code == null ? '' : code).trim();
+  var secret = urlshortSecret();
+  if (!secret) return { verified: false, reason: 'not-set-up' };
+  var listed = urlshortListed(email);
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(3000); } catch (e) { return { verified: false, reason: 'busy' }; }
+  try {
+    var cache = CacheService.getScriptCache();
+    var key = URLSHORT_NS + 'code_' + otpHash(email);
+    var raw = cache.get(key);
+    if (!raw) return { verified: false, reason: 'expired' };
+    var rec;
+    try { rec = JSON.parse(raw); } catch (e2) { return { verified: false, reason: 'expired' }; }
+    var left = Math.ceil((rec.exp - Date.now()) / 1000);
+    if (!(left > 0)) { cache.remove(key); return { verified: false, reason: 'expired' }; }
+    rec.tries = (rec.tries || 0) + 1;
+    if (rec.tries > 5) { cache.remove(key); return { verified: false, reason: 'too-many' }; }
+    if (listed && rec.code && code === rec.code) {
+      cache.remove(key);
+      var exp = Math.floor(Date.now() / 1000) + urlshortPassHours() * 3600;
+      return { verified: true, token: urlshortToken(email, secret, exp), exp: exp };
+    }
+    cache.put(key, JSON.stringify(rec), left);
+    return { verified: false, reason: 'wrong', triesLeft: Math.max(0, 5 - rec.tries) };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/* ------------- the link shortener's log, pulled into this spreadsheet ------------- */
+
+// Google refuses calls from Cloudflare's servers, so the shortener keeps its events (links made
+// and deleted, every visit) in a Cloudflare D1 database and this pulls them in. Run
+// installShortLinkSync() once: it makes syncShortLinks() run every 5 minutes.
+var URLSHORT_LOG_URL = 'https://karan98.in/api/urlshort/log';
+var URLSHORT_LOG_PAGE = 500;
+
+// The key the log endpoint takes: base64url(HMAC-SHA256(URLSHORT_GATE_SECRET, 'urlshort-log')).
+function urlshortLogKey(secret) {
+  var sig = Utilities.computeHmacSha256Signature('urlshort-log', secret, Utilities.Charset.UTF_8);
+  return Utilities.base64EncodeWebSafe(sig).replace(/=+$/, '');
+}
+
+// [ column label, value from an event ]: the device columns match the contact form's names.
+function urlshortClient(ev, k) {
+  if (ev._client === undefined) { try { ev._client = JSON.parse(ev.client || '{}') || {}; } catch (e) { ev._client = {}; } }
+  var v = ev._client[k];
+  return v == null ? '' : String(v);
+}
+function urlshortTime(ms) { return ms ? Utilities.formatDate(new Date(ms), 'Asia/Kolkata', 'dd MMM yyyy, hh:mm:ss a') : ''; }
+var URLSHORT_PLACE_COLS = [
+  ['IP', function (e) { return e.ip; }], ['Country', function (e) { return e.country; }],
+  ['City', function (e) { return e.city; }], ['State', function (e) { return e.region; }],
+  ['Postal', function (e) { return e.postal; }], ['Latitude', function (e) { return e.lat; }],
+  ['Longitude', function (e) { return e.lon; }], ['Timezone', function (e) { return e.tz; }],
+  ['ISP', function (e) { return e.isp; }], ['ASN', function (e) { return e.asn; }],
+  ['Browser', function (e) { return e.browser; }], ['OS', function (e) { return e.os; }],
+  ['Device type', function (e) { return e.device; }]
+];
+var URLSHORT_TAIL_COLS = [
+  ['Accept-Language', function (e) { return e.lang; }], ['Referer', function (e) { return e.referer; }],
+  ['CF colo', function (e) { return e.colo; }], ['HTTP protocol', function (e) { return e.http; }],
+  ['TLS version', function (e) { return e.tls; }], ['User-Agent', function (e) { return e.ua; }]
+];
+var URLSHORT_MADE_COLS = [
+  ['Time (IST)', function (e) { return urlshortTime(e.t); }],
+  ['Event', function (e) {
+    if (e.kind === 'delete') return 'Deleted';
+    if (e.kind === 'denied') return 'Refused: ' + (e.result || '');
+    return ({ 'new': 'Made', repeat: 'Made again (same link)', renewed: 'Renewed' })[e.result] || 'Made';
+  }],
+  ['Short link', function (e) { return e.code ? 'karan98.in/s/' + e.code : ''; }],
+  ['Long URL', function (e) { return e.url; }],
+  ['Works until (IST)', function (e) { return e.kind !== 'make' ? '' : e.expires ? urlshortTime(e.expires) : 'Never'; }],
+  ['By', function (e) { return e.actor; }]
+].concat(URLSHORT_PLACE_COLS, [
+  ['Browser version', function (e) { return urlshortClient(e, 'browserVersion'); }],
+  ['OS version', function (e) { return urlshortClient(e, 'osVersion'); }],
+  ['Device model', function (e) { return urlshortClient(e, 'deviceModel'); }],
+  ['Screen', function (e) { return urlshortClient(e, 'screen'); }],
+  ['Viewport', function (e) { return urlshortClient(e, 'viewport'); }],
+  ['Pixel ratio', function (e) { return urlshortClient(e, 'pixelRatio'); }],
+  ['Colour scheme', function (e) { return urlshortClient(e, 'colorScheme'); }],
+  ['Device timezone', function (e) { return urlshortClient(e, 'timezone'); }],
+  ['UTC offset', function (e) { return urlshortClient(e, 'timezoneOffset'); }],
+  ['Language', function (e) { return urlshortClient(e, 'language'); }],
+  ['Languages', function (e) { return urlshortClient(e, 'languages'); }],
+  ['Touch points', function (e) { return urlshortClient(e, 'touchPoints'); }],
+  ['CPU cores', function (e) { return urlshortClient(e, 'cpuCores'); }],
+  ['Device memory', function (e) { return urlshortClient(e, 'deviceMemory'); }],
+  ['Network', function (e) { return urlshortClient(e, 'network'); }]
+], URLSHORT_TAIL_COLS);
+var URLSHORT_VISIT_COLS = [
+  ['Time (IST)', function (e) { return urlshortTime(e.t); }],
+  ['Short link', function (e) { return e.code ? 'karan98.in/s/' + e.code : ''; }],
+  ['Result', function (e) {
+    return ({ redirect: 'Opened', expired: 'Expired', 'not-found': 'Not found', error: 'Error' })[e.result] || String(e.result || '');
+  }],
+  ['Long URL', function (e) { return e.url; }]
+].concat(URLSHORT_PLACE_COLS, URLSHORT_TAIL_COLS);
+
+// How many rows each log tab keeps, newest first (Script Property URLSHORT_TAB_ROWS, default
+// 100,000). A spreadsheet holds at most 10 million cells, and this one is the contact form's
+// too: two full tabs come to about 6.6 million, so visits, however many, can't fill it.
+function urlshortTabRows() {
+  var n = parseInt(PropertiesService.getScriptProperties().getProperty('URLSHORT_TAB_ROWS') || '100000', 10);
+  return Math.min(200000, Math.max(1000, n || 100000));
+}
+
+function urlshortAppend(ss, name, cols, events) {
+  if (!events.length) return;
+  // a new tab goes last: doPost writes the contact form to the first one
+  var sh = ss.getSheetByName(name) || ss.insertSheet(name, ss.getNumSheets());
+  if (sh.getLastRow() === 0) {
+    sh.getRange(1, 1, 1, cols.length).setValues([cols.map(function (c) { return c[0]; })]);
+    sh.setFrozenRows(1);
+  }
+  var rows = events.map(function (e) {
+    return cols.map(function (c) { var v = c[1](e); return v == null ? '' : sheetSafe(v); });
+  });
+  var have = sh.getLastRow() - 1;                       // data rows, under the header
+  var over = have + rows.length - urlshortTabRows();
+  if (over > 0 && have > 0) sh.deleteRows(2, Math.min(over, have));   // the oldest go first
+  sh.getRange(sh.getLastRow() + 1, 1, rows.length, cols.length).setValues(rows);
+}
+
+// Pulls new events into the "Short links" and "Link visits" sheets. The Function forgets events
+// only once a later call shows they arrived here (it deletes ids up to `after`), so a failed run
+// loses nothing: the next one fetches the same events again.
+// Anything that goes wrong is thrown, so the run shows as Failed on the Executions page and
+// Google's failure email says why: a Sheet that quietly stops filling would go unnoticed.
+function syncShortLinks() {
+  var secret = urlshortSecret();
+  if (!secret) throw new Error('syncShortLinks: URLSHORT_GATE_SECRET is missing, or the same as another gate\'s');
+  var lock = LockService.getUserLock(); // not the script lock, which the sign-ins hold briefly
+  if (!lock.tryLock(1000)) return;      // the previous run is still going
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var sheetId = props.getProperty('SHEET_ID') || '';
+    var ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
+    var key = urlshortLogKey(secret);
+    for (var page = 0; page < 5; page++) {
+      // "N": the Sheet has every event up to N. "N+M": a run stopped part-way through the page
+      // after N, once its "Short links" rows (ids up to M) were in but before its visits were.
+      var cur = String(props.getProperty('urlshort_log_last') || '0');
+      var after = parseInt(cur, 10) || 0, madeDone = parseInt(cur.split('+')[1], 10) || 0;
+      var resp = UrlFetchApp.fetch(URLSHORT_LOG_URL, {
+        method: 'post', contentType: 'application/json', muteHttpExceptions: true, followRedirects: false,
+        headers: { Authorization: 'Bearer ' + key },
+        payload: JSON.stringify({ after: after, limit: URLSHORT_LOG_PAGE })
+      });
+      if (resp.getResponseCode() !== 200) {
+        throw new Error('HTTP ' + resp.getResponseCode() + ' ' + resp.getContentText().slice(0, 200));
+      }
+      var data;
+      try { data = JSON.parse(resp.getContentText()); } catch (e) { data = null; }
+      if (!data || data.ok !== true || !Array.isArray(data.events)) throw new Error('an unexpected answer from the log');
+      var made = [], visits = [], last = after;
+      data.events.forEach(function (ev) {
+        if (!ev || typeof ev.id !== 'number') return;
+        if (ev.id > last) last = ev.id;
+        if (ev.kind === 'visit') visits.push(ev);
+        else if (ev.id > madeDone) made.push(ev);
+      });
+      urlshortAppend(ss, 'Short links', URLSHORT_MADE_COLS, made);
+      if (visits.length) props.setProperty('urlshort_log_last', after + '+' + last);
+      urlshortAppend(ss, 'Link visits', URLSHORT_VISIT_COLS, visits);
+      props.setProperty('urlshort_log_last', String(last));
+      if (data.events.length < URLSHORT_LOG_PAGE || last === after) return;
+    }
+  } catch (e) {
+    console.error('syncShortLinks: ' + e);   // the next run (5 minutes) picks up where this one stopped
+    throw e;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// Run once from the editor (it asks for permission to manage triggers). Safe to run again.
+function installShortLinkSync() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'syncShortLinks') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('syncShortLinks').timeBased().everyMinutes(5).create();
+}
+
 /* ------------------------------- helpers --------------------------------- */
+
+// A cell written from text that starts with = + - or @ is read as a formula. A visitor
+// decides much of what lands in these rows (a message, a User-Agent, a Referer), and
+// =IMAGE("https://…?"&A2) would send the Sheet's contents away when it is opened. A
+// leading apostrophe keeps such text as text, and Sheets doesn't show it.
+function sheetSafe(v) {
+  return typeof v === 'string' && /^[=+\-@\t\r]/.test(v) ? "'" + v : v;
+}
 
 function deob(b64, key) {
   var bytes = Utilities.base64Decode(b64);
