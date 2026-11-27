@@ -86,8 +86,11 @@ contact form) to be added.
        1,000–200,000. Default 100,000. See "What is logged".
    - In the editor, pick **installShortLinkSync** and press **Run** once. Approve the
      permissions it asks for: this code runs on a timer and connects to karan98.in to collect
-     the log, which the old code didn't. From then on the **Short links** and **Link visits**
-     tabs fill every 5 minutes. Running it again is harmless. Runs before step 6's deployment
+     the log, which the old code didn't. It makes the **Short links** and **Link visits** tabs
+     at once, copies anything already logged, and says so in the execution log; from then on
+     the tabs fill every 5 minutes. If something isn't set up yet, it stops with a message that
+     says what to fix (the tabs and the timer stay): fix it and run it again. Running it again
+     is always harmless. Runs before step 6's deployment
      is live fail, and Google may email you about them; that's expected: HTTP 405 until the
      pull request is merged, then 503 or 401 until both secrets are set and match.
    - Then **Deploy → Manage deployments → ✎ Edit → Version: New version → Deploy.** The web
@@ -190,12 +193,15 @@ million cells, so this keeps a flood of visits from ever filling it. Two full ta
   4 seconds on purpose, and they never say whether an address is on the list.
 - **The Sheet** fills every 5 minutes, so the newest events can take that long to appear. If it
   stops filling, the `syncShortLinks` runs show as **Failed** on the Apps Script's
-  **Executions** page (Google usually emails you about failed runs too), and the error says why:
+  **Executions** page (Google usually emails you about failed runs too), and the error says
+  what to do. To see it at once, pick **syncShortLinks** in the editor and press **Run**. In
+  short:
   - HTTP 403 with a Cloudflare challenge page: **Bot Fight Mode** (Security → Bots) is stopping
     Google's call. Turn it off, or add a rule that skips it for `/api/urlshort/log`.
   - HTTP 401: the two `URLSHORT_GATE_SECRET` values (Cloudflare and the Apps Script) differ.
   - HTTP 503 `not-set-up`: the D1 database isn't bound yet, or Cloudflare has no
-    `URLSHORT_GATE_SECRET`.
+    `URLSHORT_GATE_SECRET` (add it, then retry the latest deployment).
+  - HTTP 405 or 404: karan98.in doesn't have the shortener yet (not merged, or still deploying).
 
   Meanwhile the events wait in D1, and the next good runs catch up, up to 2,500 events each.
 - **If you ever delete and recreate the D1 database,** also delete the Script Property

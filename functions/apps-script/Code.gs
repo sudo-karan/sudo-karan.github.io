@@ -754,14 +754,29 @@ function urlshortTabRows() {
   return Math.min(200000, Math.max(1000, n || 100000));
 }
 
-function urlshortAppend(ss, name, cols, events) {
-  if (!events.length) return;
-  // a new tab goes last: doPost writes the contact form to the first one
+// The spreadsheet the contact form writes to: SHEET_ID if set, else the one this script
+// belongs to (opened from the Sheet with Extensions → Apps Script).
+function urlshortSpreadsheet() {
+  var sheetId = PropertiesService.getScriptProperties().getProperty('SHEET_ID') || '';
+  var ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) throw new Error('No spreadsheet to write to: open this script from the Sheet (Extensions → Apps Script), or set the Script Property SHEET_ID');
+  return ss;
+}
+
+// The tab, made if it isn't there: last, so doPost's first tab stays the contact form's, with
+// its header row frozen.
+function urlshortTab(ss, name, cols) {
   var sh = ss.getSheetByName(name) || ss.insertSheet(name, ss.getNumSheets());
   if (sh.getLastRow() === 0) {
     sh.getRange(1, 1, 1, cols.length).setValues([cols.map(function (c) { return c[0]; })]);
     sh.setFrozenRows(1);
   }
+  return sh;
+}
+
+function urlshortAppend(ss, name, cols, events) {
+  if (!events.length) return;
+  var sh = urlshortTab(ss, name, cols);
   var rows = events.map(function (e) {
     return cols.map(function (c) { var v = c[1](e); return v == null ? '' : sheetSafe(v); });
   });
@@ -771,20 +786,33 @@ function urlshortAppend(ss, name, cols, events) {
   sh.getRange(sh.getLastRow() + 1, 1, rows.length, cols.length).setValues(rows);
 }
 
+// What an answer from the log means, in words that say what to do about it.
+function urlshortWhy(code, text) {
+  var t = String(text || '');
+  if (code === 404 || code === 405) return 'karan98.in doesn\'t have the link shortener yet: merge the pull request and let its deployment finish';
+  if (code === 503 && /not-set-up/.test(t)) return 'karan98.in\'s live deployment has no URLSHORT_GATE_SECRET or no D1 database: add the secret in Cloudflare (type Secret, Production), then Deployments → ⋯ → Retry deployment';
+  if (code === 401) return 'this script\'s URLSHORT_GATE_SECRET isn\'t the same as Cloudflare\'s: copy one into the other (and retry the deployment if you changed Cloudflare\'s)';
+  if (code === 403 && /wrong-host/.test(t)) return 'the log answers only at karan98.in itself';
+  if (code === 403) return 'Cloudflare stopped Google\'s call, probably Bot Fight Mode (Security → Bots): turn it off, or skip it for /api/urlshort/log';
+  if (code >= 500) return 'karan98.in had a problem; the next run tries again';
+  return 'karan98.in answered in a way this script doesn\'t expect';
+}
+
 // Pulls new events into the "Short links" and "Link visits" sheets. The Function forgets events
 // only once a later call shows they arrived here (it deletes ids up to `after`), so a failed run
 // loses nothing: the next one fetches the same events again.
 // Anything that goes wrong is thrown, so the run shows as Failed on the Executions page and
 // Google's failure email says why: a Sheet that quietly stops filling would go unnoticed.
+// Returns how many events it copied, or null if another run was still going.
 function syncShortLinks() {
   var secret = urlshortSecret();
-  if (!secret) throw new Error('syncShortLinks: URLSHORT_GATE_SECRET is missing, or the same as another gate\'s');
+  if (!secret) throw new Error('syncShortLinks: add the Script Property URLSHORT_GATE_SECRET, the same value as Cloudflare\'s secret of that name (and not ICTD_GATE_SECRET\'s or PHD_GATE_SECRET\'s)');
   var lock = LockService.getUserLock(); // not the script lock, which the sign-ins hold briefly
-  if (!lock.tryLock(1000)) return;      // the previous run is still going
+  if (!lock.tryLock(1000)) return null; // the previous run is still going
+  var wrote = 0;
   try {
     var props = PropertiesService.getScriptProperties();
-    var sheetId = props.getProperty('SHEET_ID') || '';
-    var ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
+    var ss = urlshortSpreadsheet();
     var key = urlshortLogKey(secret);
     for (var page = 0; page < 5; page++) {
       // "N": the Sheet has every event up to N. "N+M": a run stopped part-way through the page
@@ -797,7 +825,8 @@ function syncShortLinks() {
         payload: JSON.stringify({ after: after, limit: URLSHORT_LOG_PAGE })
       });
       if (resp.getResponseCode() !== 200) {
-        throw new Error('HTTP ' + resp.getResponseCode() + ' ' + resp.getContentText().slice(0, 200));
+        var status = resp.getResponseCode(), text = resp.getContentText();
+        throw new Error('HTTP ' + status + ': ' + urlshortWhy(status, text) + '. (It answered: ' + text.slice(0, 160) + ')');
       }
       var data;
       try { data = JSON.parse(resp.getContentText()); } catch (e) { data = null; }
@@ -813,8 +842,10 @@ function syncShortLinks() {
       if (visits.length) props.setProperty('urlshort_log_last', after + '+' + last);
       urlshortAppend(ss, 'Link visits', URLSHORT_VISIT_COLS, visits);
       props.setProperty('urlshort_log_last', String(last));
-      if (data.events.length < URLSHORT_LOG_PAGE || last === after) return;
+      wrote += made.length + visits.length;
+      if (data.events.length < URLSHORT_LOG_PAGE || last === after) return wrote;
     }
+    return wrote;
   } catch (e) {
     console.error('syncShortLinks: ' + e);   // the next run (5 minutes) picks up where this one stopped
     throw e;
@@ -823,12 +854,23 @@ function syncShortLinks() {
   }
 }
 
-// Run once from the editor (it asks for permission to manage triggers). Safe to run again.
+// Run once from the editor: it asks for permission to run on a timer and to call karan98.in.
+// Safe to run again. It also makes both tabs at once and runs a first sync, so a setup problem
+// shows right here, in words that say what to fix, instead of in a timer's failure email.
 function installShortLinkSync() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'syncShortLinks') ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('syncShortLinks').timeBased().everyMinutes(5).create();
+  var ss = urlshortSpreadsheet();
+  urlshortTab(ss, 'Short links', URLSHORT_MADE_COLS);
+  urlshortTab(ss, 'Link visits', URLSHORT_VISIT_COLS);
+  var n = syncShortLinks();   // throws, saying what to fix, if karan98.in doesn't answer as it should
+  var msg = 'All set: the "Short links" and "Link visits" tabs are in "' + ss.getName() + '" and fill every 5 minutes. ' +
+    (n === null ? 'A sync was already running.' : n ? n + ' event' + (n === 1 ? ' was' : 's were') + ' copied just now.' :
+      'Nothing has been logged yet: make a link (or open one) and it shows here within 5 minutes.');
+  console.log(msg);
+  return msg;
 }
 
 /* ------------------------------- helpers --------------------------------- */
