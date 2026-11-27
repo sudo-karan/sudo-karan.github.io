@@ -37,6 +37,13 @@ assets/Jaskaran_Singh_Resume.pdf
 .nojekyll               # serve files as-is (skip Jekyll)
 ```
 
+## Link shortener
+
+**karan98.in/urlshort** makes `karan98.in/s/<code>` short links that anyone can
+open. Only the owner key can create or delete them. It runs on Cloudflare Pages
+Functions with a KV namespace; see [`URLSHORT_SETUP.md`](URLSHORT_SETUP.md) for the
+one-time setup.
+
 ## Local preview
 
 ```bash

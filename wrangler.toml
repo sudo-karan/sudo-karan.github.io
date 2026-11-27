@@ -6,3 +6,11 @@
 name = "sudo-karan-github-io"
 compatibility_date = "2024-11-06"
 pages_build_output_dir = "."
+
+# Link shortener storage (karan98.in/urlshort; see URLSHORT_SETUP.md). Bindings
+# for this project must be declared here: with this file present, Cloudflare
+# ignores bindings added in the dashboard. Create a KV namespace, then uncomment
+# and paste its ID. Never commit a made-up ID: the deploy would fail.
+# [[kv_namespaces]]
+# binding = "URLSHORT"
+# id = ""

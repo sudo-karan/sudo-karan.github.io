@@ -38,6 +38,7 @@ every message to a **Google Sheet** and **emails** you.
 | `ICTD_GATE_SECRET` | Apps Script property, and the map's Cloudflare env `ICTD_GATE_SECRET` (same value) | **no** |
 | `PHD_WHITELIST` | Apps Script property only (the PhD explorer's sign-in, below) | **no** |
 | `PHD_GATE_SECRET` | Apps Script property, and the explorer's Cloudflare env `PHD_GATE_SECRET` (same value, not ICTD's) | **no** |
+| `URLSHORT_KEY` | Cloudflare secret on this project: the link shortener's owner key ([`URLSHORT_SETUP.md`](URLSHORT_SETUP.md)) | **no** |
 
 > The Function only reads **`PRIVATE_KEY`** now. The old `TURNSTILE_SECRET` /
 > `APPS_SCRIPT_URL` / `SHARED_SECRET` Cloudflare env vars are **unused** (harmless to

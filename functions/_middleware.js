@@ -2,7 +2,8 @@
    Cloudflare Pages middleware — runs for EVERY request to karan98.in.
 
    This repo (the portfolio) is a single-page site. It owns "/", "/assets/*",
-   "/api/*" and "/.well-known/*". GitHub Pages (sudo-karan.github.io) hosts the
+   "/api/*", "/.well-known/*", and the link shortener's "/urlshort" and "/s/*".
+   GitHub Pages (sudo-karan.github.io) hosts the
    same site AND separate project folders. The goal: every project at
    sudo-karan.github.io/<name> is reachable at karan98.in/<name> with the URL left
    on karan98.in. Any project you publish works automatically; no per-project rule
@@ -49,13 +50,17 @@ function phdMovedTo(url) {
 }
 
 // Paths THIS repo serves itself — always answered locally, never proxied.
-// (A project literally named "assets", "api" or ".well-known" would collide,
-// but none do.)
+// (A project literally named "assets", "api", ".well-known", "s" or "urlshort"
+// would collide, but none do.)
 function isOwnPath(pathname) {
   if (pathname === "/") return true;
   if (pathname.startsWith("/assets/")) return true;
   if (pathname.startsWith("/api/")) return true;
   if (pathname.startsWith("/.well-known/")) return true;
+  // The link shortener: its page (urlshort.html) and the short links themselves
+  // (functions/s/[code].js), which shouldn't wait on a trip to GitHub first.
+  if (pathname === "/urlshort" || pathname === "/urlshort/") return true;
+  if (pathname.startsWith("/s/")) return true;
   // A top-level file — one path segment with an extension — is this repo's own
   // static file: /index.html, /404.html, /robots.txt, /sitemap.xml,
   // /favicon.ico, /site.webmanifest, etc. GitHub Pages projects are always
