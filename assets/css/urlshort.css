@@ -220,16 +220,20 @@ button { cursor: pointer; }
   font-size: 1rem; color: var(--ink);
 }
 .well input::placeholder { color: var(--ink-3); opacity: 1; }
-/* 44px tall inside the 50px well; the transparent border becomes its edge in forced colours */
-.paste-btn {
-  display: inline-flex; align-items: center; gap: 0.35rem; flex: none;
+/* 44px tall inside the 50px well; the transparent border becomes its edge in forced colours.
+   The sign-in wells (Send code, Verify) use the same button. */
+.paste-btn, .well-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; flex: none;
   height: calc(100% - 0.375rem); min-height: 44px; margin-right: 0.1875rem; padding: 0 0.85rem;
-  font-size: 0.86rem; font-weight: 600; color: var(--violet-deep);
+  font-size: 0.86rem; font-weight: 600; color: var(--violet-deep); white-space: nowrap;
   background: var(--violet-tint); border: 1px solid transparent; border-radius: 10px;
   -webkit-tap-highlight-color: transparent;
 }
 .paste-btn .i { width: 1rem; height: 1rem; }
-.paste-btn:active { background: var(--frame); }
+.paste-btn:active, .well-btn:active { background: var(--frame); }
+.well-btn:hover { background: var(--frame); }
+.well-btn.is-busy { cursor: progress; }
+.well-btn.is-busy:hover { background: var(--violet-tint); }
 
 /* karan98.in/s/ + the ending, composed like the link it will become */
 .affix { display: flex; align-items: baseline; padding: 0; cursor: text; }
@@ -261,12 +265,69 @@ button { cursor: pointer; }
 }
 .invalid .hint { display: none; }
 
-/* owner key: folds open on the first submit when no key is known */
+/* how long the link lasts: a row of choices that read like small fields, the chosen one
+   in violet. The real radio covers its chip, invisibly, so clicks, keys and screen
+   readers all meet a native control. */
+.lasts { min-width: 0; margin-inline: 0; padding: 0; border: 0; }
+.lasts > legend { display: block; width: 100%; padding: 0; }
+.chips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.4rem; }
+.chip { position: relative; display: block; min-width: 0; }
+.chip input {
+  position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; margin: 0;
+  opacity: 0; cursor: pointer; -webkit-appearance: none; appearance: none;
+}
+.chip span {
+  display: flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 0.35rem;
+  font-size: 0.84rem; font-weight: 600; line-height: 1.2; color: var(--ink-2); white-space: nowrap;
+  background: var(--field); border: 1px solid var(--field-line); border-radius: 12px;
+  transition: border-color .2s, background-color .2s, color .2s;
+}
+.chip:hover span { border-color: color-mix(in srgb, var(--ink) 62%, transparent); }
+.chip input:checked + span {
+  color: var(--violet-deep); background: var(--violet-tint);
+  border-color: var(--violet); box-shadow: inset 0 0 0 1px var(--violet);
+}
+.chip input:focus-visible + span { outline: 2px solid var(--violet); outline-offset: 2px; }
+/* the form card is the measure: six across where they fit; with the owner's "Never", four */
+.form-card { container: formcard / inline-size; }
+@container formcard (min-width: 26rem) {
+  .chips { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
+@container formcard (min-width: 17rem) {
+  .chips.has-never { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+/* Custom: a number and its unit, side by side */
+.custom { display: flex; gap: 0.5rem; margin-top: 0.6rem; }
+.custom > .input { flex: 1 1 0%; width: 0; min-width: 0; }
+.select { position: relative; display: block; flex: 1 1 0%; min-width: 0; }
+.select .input { padding-right: 2.5rem; cursor: pointer; }
+.select::after {
+  content: ""; position: absolute; top: 50%; right: 1.15rem; width: 0.45rem; height: 0.45rem;
+  border-right: 1.75px solid var(--ink-2); border-bottom: 1.75px solid var(--ink-2);
+  transform: translateY(-70%) rotate(45deg); pointer-events: none;
+}
+.custom.invalid ~ .hint { display: none; }
+
+/* signing in: folds open on the first submit when no key or sign-in is known */
 .keybox { display: grid; grid-template-rows: 1fr; margin-top: 1.35rem; }
 .keybox-in { min-height: 0; overflow: hidden; margin: -6px; padding: 6px; }  /* room for the focus ring */
-.keybox-in > .field { padding-top: 1.35rem; border-top: 1px solid var(--line); }
+.keybox-in > .field, .keybox-in > .signin { padding-top: 1.35rem; border-top: 1px solid var(--line); }
+.kb-lead { margin-bottom: 1.1rem; font-size: 0.9rem; line-height: 1.5; color: var(--ink-2); text-wrap: pretty; }
+.kb-lead a {
+  font-weight: 600; color: var(--violet); text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); text-underline-offset: 3px; border-radius: 4px;
+}
+.kb-lead a:hover { color: var(--violet-deep); text-decoration-color: currentColor; }
+/* the sign-in code: six figures, spaced like a code on paper */
+.well .code-in { font-family: var(--mono); font-size: 1.12rem; letter-spacing: 0.32em; }
+.well .code-in::placeholder { letter-spacing: normal; }
+.sent { display: flex; align-items: flex-start; gap: 0.45rem; margin-bottom: 1rem; font-size: 0.85rem; line-height: 1.45; color: var(--ink-2); }
+.sent .i { width: 1rem; height: 1rem; margin-top: 0.12rem; color: var(--violet); }
+.resend { margin: 0.3rem 0 0 -0.4rem; }
+.kb-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 1rem; margin-top: 0.3rem; }
+.kb-foot .text-btn { margin-left: -0.4rem; }
 .check {
-  display: inline-flex; align-items: center; gap: 0.65rem; min-height: 44px; margin-top: 0.3rem;
+  display: inline-flex; align-items: center; gap: 0.65rem; min-height: 44px;
   font-size: 0.92rem; color: var(--ink); cursor: pointer;
 }
 .check input { width: 1.15rem; height: 1.15rem; margin: 0; accent-color: var(--btn); cursor: pointer; }
@@ -320,6 +381,7 @@ button { cursor: pointer; }
   margin: 0.7rem 0 -0.4rem; font-size: 0.84rem; line-height: 1.4; color: var(--ink-3); text-align: center;
 }
 .keystate-text .i { display: inline-block; width: 1rem; height: 1rem; margin-right: 0.4rem; vertical-align: -0.2em; color: var(--violet); }
+.keystate .who { font-weight: 600; color: var(--ink-2); overflow-wrap: anywhere; }
 .keystate .text-btn { font-size: 0.84rem; }
 
 .icon-btn {
@@ -391,6 +453,11 @@ button { cursor: pointer; }
 }
 .short:hover .code { text-decoration-color: currentColor; }
 .short.is-long .code { font-size: 1.7rem; font-size: clamp(1.5rem, 7cqi, 2.2rem); line-height: 1.15; }
+.ks-link { min-width: 0; }
+/* when the link stops working, set under it like a caption */
+.ks-exp { display: flex; align-items: flex-start; gap: 0.4rem; margin-top: 0.6rem; font-size: 0.86rem; line-height: 1.4; color: var(--ink-2); }
+.ks-exp .i { width: 1rem; height: 1rem; margin-top: 0.1rem; color: var(--violet); }
+.ks-exp .when { white-space: nowrap; }
 
 /* where the short link leads: a full-width caption line, the host set in ink */
 .orig { display: flex; align-items: baseline; gap: 0.6rem; min-width: 0; margin-top: 1.1rem; font-size: 0.88rem; }
@@ -445,8 +512,8 @@ button { cursor: pointer; }
 /* label swap with a fixed width, so "Copied" never nudges its neighbours */
 .swap { display: inline-grid; }
 .swap > * { grid-area: 1 / 1; justify-self: start; }
-.swap .b, .is-done .swap .a { visibility: hidden; }
-.is-done .swap .b { visibility: visible; }
+.swap .b, .is-done .swap .a, .is-busy .swap .a { visibility: hidden; }
+.is-done .swap .b, .is-busy .swap .b { visibility: visible; }
 
 /* ---- recent links on this device ------------------------------------------ */
 .recent-head {
@@ -471,10 +538,15 @@ button { cursor: pointer; }
 .r-short .host { font-family: var(--mono); font-size: 0.8rem; color: var(--ink-3); }
 .r-short .code { font-family: var(--serif); font-style: normal; font-weight: 600; font-variant-numeric: lining-nums; font-size: 1.3rem; color: var(--violet); }
 .r-short:hover .code { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.14em; }
-.r-meta { display: flex; align-items: baseline; gap: 0.6rem; min-width: 0; margin-top: 0.15rem; font-size: 0.82rem; color: var(--ink-3); }
-.r-time { flex: none; font-size: 0.66rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; }
+/* age · expiry · destination; the destination takes a line of its own when the row is narrow */
+.r-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.6rem; min-width: 0; margin-top: 0.15rem; font-size: 0.82rem; color: var(--ink-3); }
+.r-time, .r-exp { flex: none; font-size: 0.66rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; }
+.r-time + .r-exp::before { content: "·"; content: "·" / ""; margin-right: 0.6rem; letter-spacing: 0; }
+.r-exp.is-expired { color: var(--danger); }
+/* an expired link no longer leads anywhere: its code fades back */
+.r-item.is-expired .r-short .code { color: var(--ink-3); }
 /* above the row link's overlay, so its tooltip (the full destination) shows and it can be selected */
-.r-orig { position: relative; z-index: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.r-orig { position: relative; z-index: 1; flex: 1 1 9rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .r-orig .o-host { color: var(--ink-2); font-weight: 500; }
 .r-actions { display: flex; margin-right: -0.5rem; }
 
@@ -510,6 +582,12 @@ button { cursor: pointer; }
 .colophon a:hover { color: var(--violet-deep); }
 .colophon .i { width: 1rem; height: 1rem; transition: transform .25s var(--ease); }
 .colophon a:hover .i { transform: translateX(-3px); }
+/* the small print: what the shortener records, on a line of its own (the padding keeps
+   its measure short without letting it share the line above) */
+.fineprint {
+  flex: 0 0 100%; margin: 0.4rem 0 0; padding-right: max(0px, calc(100% - 64ch));
+  font-size: 0.78rem; line-height: 1.55; color: var(--ink-3); text-wrap: pretty;
+}
 
 /* ---- wide screens: the intro and the index on the left, the tool on the right --- */
 @media (min-width: 960px) {
@@ -556,4 +634,7 @@ button { cursor: pointer; }
   .card, .keepsake, .r-item.confirming { border: 1px solid CanvasText; }
   .keepsake::before { border-color: CanvasText; }
   .short::before { display: none; }
+  /* the chosen length must show without its tint */
+  .chip input:checked + span { forced-color-adjust: none; color: HighlightText; background: Highlight; border-color: Highlight; box-shadow: none; }
+  .select::after { border-color: CanvasText; }
 }
