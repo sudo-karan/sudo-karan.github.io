@@ -81,16 +81,20 @@ contact form) to be added.
        device, 1–720 hours. Default 24.
      - `URLSHORT_TAB_ROWS` (optional): how many rows each log tab keeps, newest first,
        1,000–200,000. Default 100,000. See "What is logged".
-   - **Deploy → Manage deployments → ✎ Edit → Version: New version → Deploy.** The web app's
-     URL stays the same.
-   - In the editor, pick **installShortLinkSync** and press **Run** once. Approve the new
-     permission (to run on a timer). From then on the **Short links** and **Link visits** tabs
-     fill every 5 minutes. Running it again is harmless. Runs before step 6's deployment is
-     live may fail (HTTP 503 or 401) and Google may email you about them; that's expected.
+   - In the editor, pick **installShortLinkSync** and press **Run** once. Approve the
+     permissions it asks for: this code runs on a timer and connects to karan98.in to collect
+     the log, which the old code didn't. From then on the **Short links** and **Link visits**
+     tabs fill every 5 minutes. Running it again is harmless. Runs before step 6's deployment
+     is live may fail (HTTP 404, 503 or 401) and Google may email you about them; that's
+     expected.
+   - Then **Deploy → Manage deployments → ✎ Edit → Version: New version → Deploy.** The web
+     app's URL stays the same. (Approving first means the sign-in never runs without the
+     permissions this code needs.)
 6. **Deploy.**
-   - The push in step 3 deploys.
-   - If you added a secret after that deploy finished, retry the latest deployment so the
-     Functions see it: **Deployments → ⋯ → Retry deployment**.
+   - Production deploys from `main`: merging the pull request that has the bindings deploys
+     karan98.in. (A push to another branch only builds a preview at a `*.pages.dev` address.)
+   - If you added a secret after that deploy finished, retry the latest production
+     deployment so the Functions see it: **Deployments → ⋯ → Retry deployment**.
 7. **Use it.**
    - Open **https://karan98.in/urlshort** and paste a link.
    - To use your owner key, choose **Use the owner key instead** when the page asks you to
@@ -195,10 +199,11 @@ million cells, so this keeps a flood of visits from ever filling it. Two full ta
   `urlshort_log_last` in the Apps Script. It remembers how far the Sheet has got, and a new
   database counts from 1 again, so without the reset its first events would be skipped.
 - **If the page says "Signing in by email isn't switched on yet",** the Apps Script doesn't
-  have this `Code.gs` yet (paste it, then **Deploy → Manage deployments → ✎ Edit → Version:
-  New version → Deploy**), or its `URLSHORT_GATE_SECRET` is missing or the same as another
-  gate's. Until then no code is emailed to anyone: the page asks in a way an older script
-  ignores.
+  have this `Code.gs` yet, or its `URLSHORT_GATE_SECRET` is missing or the same as another
+  gate's. Paste the code, run **installShortLinkSync** once in the editor and approve the
+  permissions it asks for (this `Code.gs` needs more than the old one did), then **Deploy →
+  Manage deployments → ✎ Edit → Version: New version → Deploy**. Until then no code is
+  emailed to anyone: the page asks in a way an older script ignores.
 - **If every code is accepted but making a link then asks for a new code,** the two
   `URLSHORT_GATE_SECRET` values (Cloudflare and the Apps Script) aren't the same. Copy one into
   the other, and retry the latest deployment if you changed Cloudflare's.
