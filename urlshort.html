@@ -131,12 +131,13 @@
           <div class="ks-actions">
             <button class="btn primary" id="copy" type="button">
               <span class="swap"><svg class="i a" aria-hidden="true"><use href="#i-copy"/></svg><svg class="i b" aria-hidden="true"><use href="#i-check"/></svg></span>
-              <span class="swap"><span class="a">Copy link</span><span class="b" aria-hidden="true">Copied</span></span>
+              <span class="swap"><span class="a">Copy link</span><span class="b">Copied</span></span>
             </button>
             <a class="btn" id="open" target="_blank" rel="noopener noreferrer"><svg class="i" aria-hidden="true"><use href="#i-open"/></svg>Open<span class="sr-only"> in a new tab</span></a>
             <button class="btn" id="share" type="button" hidden><svg class="i" aria-hidden="true"><use href="#i-share"/></svg>Share</button>
             <button class="text-btn again" id="again" type="button"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>Shorten another</button>
           </div>
+          <p class="ks-msg" id="copyMsg" hidden></p>
         </section>
       </div>
 
@@ -146,6 +147,7 @@
           <span class="smallcaps" id="recentCount"></span>
         </div>
         <ul class="r-list" id="recent" hidden></ul>
+        <p class="r-more" id="recentMoreBox" hidden><button class="text-btn" id="recentMore" type="button" aria-controls="recent" aria-expanded="false">Show all links</button></p>
         <div class="empty" id="recentEmpty">
           <span class="orn-rule" aria-hidden="true"><svg class="orn"><use href="#i-star"/></svg></span>
           <p class="e-title">Nothing here yet.</p>

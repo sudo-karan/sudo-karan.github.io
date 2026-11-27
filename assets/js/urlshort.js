@@ -8,7 +8,8 @@
   var API = '/api/urlshort';
   var KEY_STORE = 'urlshort:key';
   var RECENT_STORE = 'urlshort:recent';
-  var MAX_RECENT = 20;
+  var MAX_RECENT = 200;      // the list is the only place a link can be deleted, so keep plenty
+  var SHOWN_RECENT = 20;     // … and show the newest of them until "Show all" is pressed
   var SVGNS = 'http://www.w3.org/2000/svg';
   var SLUG_RE = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
   var CODE_RE = /^[a-z0-9-]{1,64}$/;
@@ -21,6 +22,8 @@
     tooLong: 'That link is longer than 4,096 characters, which is the most a short link can hold.',
     scheme: 'Only web links, starting with http or https, can be shortened.',
     selfLink: 'That’s already a karan98.in short link. Paste the original long link instead.',
+    creds: 'Links with a name or password before the @ can’t be shortened. Remove that part and try again.',
+    email: 'That looks like an email address. Paste a web link instead.',
     badSlug: 'Use 3–40 letters, numbers or hyphens, with no hyphen at either end.',
     slugTaken: 'That ending is already taken. Try another, or leave it blank.',
     needKey: 'Enter the owner key to continue.',
@@ -28,8 +31,14 @@
     staleKey: 'The remembered key didn’t work. Enter the current one.',
     staleTabKey: 'The key entered earlier didn’t work. Enter the current one.',
     keyChars: 'That key didn’t work: a key can only use plain keyboard characters.',
-    keyToDelete: 'Enter the owner key, then delete the link again.',
+    keyLong: 'That key didn’t work: a key can be at most 1,024 characters.',
+    keyToDelete: 'Enter the owner key to finish deleting the link.',
     notSetUp: 'The shortener isn’t switched on yet.',
+    wrongHost: 'Links can only be made and deleted at karan98.in/urlshort.',
+    clipEmpty: 'The clipboard is empty. Copy a link first, then tap Paste.',
+    clipDenied: 'Couldn’t read the clipboard. Press and hold the field to paste instead.',
+    copyKeys: 'Couldn’t copy automatically. The link is selected, so copy it with Ctrl+C or ⌘C.',
+    copyTouch: 'Couldn’t copy automatically. Press and hold the link to copy it.',
     offline: 'Couldn’t reach the shortener. Check your connection and try again.',
     server: 'Something went wrong on the server. Please try again.',
     deleteFailed: 'Couldn’t delete that link. Please try again.'
@@ -44,10 +53,11 @@
   var note = $('formNote'), noteText = $('formNoteText'), retryBtn = $('retry'), forgetBtn = $('forgetKey');
   var keyState = $('keyState'), keyStateText = $('keyStateText'), pasteBtn = $('paste');
   var statusEl = $('status'), result = $('result'), shortA = $('short'), openA = $('open');
-  var copyBtn = $('copy'), shareBtn = $('share'), againBtn = $('again');
+  var copyBtn = $('copy'), shareBtn = $('share'), againBtn = $('again'), copyMsg = $('copyMsg');
   var qrBox = $('qr'), qrFigure = $('qrFigure'), qrSave = $('qrSave'), qrSvgBtn = $('qrSvg');
   var origEl = $('orig'), dateEl = $('resultDate');
   var list = $('recent'), emptyBox = $('recentEmpty'), countEl = $('recentCount'), recentTitle = $('recentTitle');
+  var moreBox = $('recentMoreBox'), moreBtn = $('recentMore');
 
   var fields = {
     url: { input: urlIn, box: $('urlField'), err: $('urlErr') },
@@ -57,6 +67,8 @@
 
   var motion = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
   function reduced() { return !!(motion && motion.matches); }
+  var coarse = window.matchMedia ? window.matchMedia('(pointer: coarse)') : null;
+  function touch() { return !!(coarse && coarse.matches); }
 
   /* ---- storage: always guarded; the page keeps working in memory without it ---- */
   function lsGet(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
@@ -74,6 +86,7 @@
   var memKey = cleanKey(lsGet(KEY_STORE));   // the key in use, remembered or for this tab only
   var remembered = !!memKey;
   var memRecent = [];
+  var pendingDelete = '';   // the code of a delete that is waiting for the owner key
 
   function httpUrl(s) {
     if (typeof s !== 'string' || !s || s.length > 8192) return '';
@@ -110,7 +123,12 @@
   }
   function writeRecent(items) {
     memRecent = items.slice(0, MAX_RECENT);
-    if (lsOk && !lsSet(RECENT_STORE, JSON.stringify(memRecent))) lsOk = false;
+    if (!lsOk) return;
+    // storage full: keep as many of the newest as fit, rather than none of the change
+    for (var n = memRecent.length; n > 0; n = Math.floor(n / 2)) {
+      if (lsSet(RECENT_STORE, JSON.stringify(memRecent.slice(0, n)))) return;
+    }
+    if (!lsSet(RECENT_STORE, '[]')) lsOk = false;
   }
 
   /* ---- small DOM helpers (no innerHTML anywhere) ---- */
@@ -213,6 +231,8 @@
     var f = fields[name];
     if (f.err.hidden) return;
     f.err.hidden = true;
+    // aria-describedby still points here, and hidden text it points at is read out
+    f.err.lastElementChild.textContent = '';
     f.box.classList.remove('invalid');
     f.input.removeAttribute('aria-invalid');
   }
@@ -244,7 +264,9 @@
     keyBox.classList.remove('opening');
     keyIn.value = '';
     clearError('key');
+    pendingDelete = '';
   }
+  function keyProblem(key) { return key.length > 1024 ? MSG.keyLong : MSG.keyChars; }
   // says where the key in use lives, so a key kept for this tab is never invisible
   function syncKeyUi() {
     keyState.hidden = !memKey;
@@ -259,11 +281,11 @@
     closeKeyBox();
     syncKeyUi();
   }
-  // the server refused this key: drop it, and say whether it was the one typed just now
+  // the server refused this key: drop it, and say whether it was the one typed just now.
+  // A different key remembered meanwhile (by another tab) is left alone.
   function rejectKey(k) {
-    memKey = '';
-    remembered = false;
-    lsDel(KEY_STORE);
+    if (!k || memKey === k.key) { memKey = ''; remembered = false; }
+    if (!k || cleanKey(lsGet(KEY_STORE)) === k.key) lsDel(KEY_STORE);
     syncKeyUi();
     openKeyBox();
     setError('key', k && !k.typed ? (k.saved ? MSG.staleKey : MSG.staleTabKey) : MSG.badKey);
@@ -273,6 +295,7 @@
     lsDel(KEY_STORE);
     memKey = '';
     remembered = false;
+    pendingDelete = '';
     syncKeyUi();
     shortenBtn.focus();
     announce('Key forgotten. Making a link will ask for it again.');
@@ -312,6 +335,14 @@
     btnLabel.textContent = on ? 'Shortening…' : 'Shorten link';
     // the keepsake must show what was sent, so nothing changes while a request is out
     urlIn.readOnly = slugIn.readOnly = keyIn.readOnly = on;
+    againBtn.setAttribute('aria-disabled', on ? 'true' : 'false');
+  }
+  // this site's own names, as the server lists them: a short link to one of its
+  // short links would only bounce around (or loop)
+  function ownHost(h) {
+    h = h.toLowerCase().replace(/\.$/, '');
+    return h === 'karan98.in' || h === 'www.karan98.in' || h === window.location.hostname.toLowerCase() ||
+      h === 'sudo-karan-github-io.pages.dev' || /\.sudo-karan-github-io\.pages\.dev$/.test(h);
   }
   function checkUrl(s) {
     if (!s) return MSG.emptyUrl;
@@ -321,13 +352,14 @@
     var scheme = /^([a-z][a-z0-9+.-]*):/i.exec(s);
     var hasScheme = !!scheme && scheme[1].indexOf('.') < 0;
     if (hasScheme && !/^https?$/i.test(scheme[1])) return MSG.scheme;
+    if (!hasScheme && /^[^\s/@]+@[^\s/@]+\.[^\s/@]+$/.test(s)) return MSG.email;
     var u;
     try { u = new URL(hasScheme ? s : 'https://' + s); } catch (e) { return MSG.badUrl; }
     if (!u.hostname) return MSG.badUrl;
-    // the same hosts the server refuses: a short link to a short link would only loop
-    var host = u.hostname.toLowerCase();
-    if ((host === 'karan98.in' || host === 'www.karan98.in' || host === window.location.hostname.toLowerCase()) &&
-        /^\/s\//i.test(u.pathname)) return MSG.selfLink;
+    if (u.username || u.password) return MSG.creds;
+    if (ownHost(u.hostname) && /^\/s\//i.test(u.pathname)) return MSG.selfLink;
+    // é, ж and the like take several characters each once encoded, as the server stores them
+    if (u.href.length > 4096) return MSG.tooLong;
     return '';
   }
   function readSlug() { return slugIn.value.trim().replace(/^\/+/, '').toLowerCase(); }
@@ -341,8 +373,36 @@
     return SLUG_RE.test(s) ? '' : MSG.badSlug;
   }
 
+  // A create whose answer never arrived may still have been saved. Until the link or
+  // ending changes, Try again sends the same request id, and the server answers with
+  // that link instead of making a second one (or calling the owner's own ending taken).
+  var pending = null;   // { sig, rid }
+  function newRid() {
+    var c = window.crypto;
+    try { if (c && typeof c.randomUUID === 'function') return c.randomUUID(); } catch (e) { /* below */ }
+    try {
+      var b = c.getRandomValues(new Uint8Array(16)), s = '';
+      for (var i = 0; i < b.length; i++) s += (b[i] < 16 ? '0' : '') + b[i].toString(16);
+      return s;
+    } catch (e) { return ''; }
+  }
+
+  // asked for the key to delete a link: Enter in the key field finishes that delete
+  function finishDelete() {
+    var code = pendingDelete;
+    pendingDelete = '';
+    if (findEntry(code)) doDelete(code);
+  }
+  keyIn.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Enter' || ev.isComposing || !pendingDelete || busy) return;
+    ev.preventDefault();
+    finishDelete();
+  });
+
   function submit() {
     if (busy) return;
+    if (pendingDelete && !urlIn.value.trim()) { finishDelete(); return; }
+    pendingDelete = '';
     hideNote();
     clearError('url');
     clearError('slug');
@@ -361,10 +421,13 @@
       return;
     }
     clearError('key');
-    if (!KEY_RE.test(k.key)) { setError('key', MSG.keyChars); return; }
+    if (!KEY_RE.test(k.key)) { setError('key', keyProblem(k.key)); return; }
 
+    var sig = raw + '\n' + slug;
+    if (!pending || pending.sig !== sig) pending = { sig: sig, rid: newRid() };
     var body = { url: raw };
     if (slug) body.slug = slug;
+    if (pending.rid) body.rid = pending.rid;
     setBusy(true);
     request('POST', API, k.key, body).then(function (r) {
       setBusy(false);
@@ -372,6 +435,7 @@
       if (r.status >= 200 && r.status < 300 && d.ok === true) {
         var code = typeof d.code === 'string' ? d.code.toLowerCase() : '';
         if (CODE_RE.test(code)) {
+          pending = null;
           acceptKey(k);
           created({ code: code, short: shortFor(d.short, code), url: httpUrl(d.url), t: Date.now() });
           return;
@@ -381,25 +445,27 @@
       }
       var err = typeof d.error === 'string' ? d.error : (r.status === 401 ? 'unauthorized' : '');
       if (err === 'bad-url') setError('url', MSG.badUrl);
+      else if (err === 'too-long') setError('url', MSG.tooLong);
+      else if (err === 'credentials') setError('url', MSG.creds);
       else if (err === 'self-link') setError('url', MSG.selfLink);
       else if (err === 'bad-slug') setError('slug', slugProblem(slug) || MSG.badSlug);
       else if (err === 'slug-taken') setError('slug', slug ? 'karan98.in/s/' + slug + ' is already taken. Try another, or leave it blank.' : MSG.slugTaken);
       else if (err === 'unauthorized') rejectKey(k);
       else if (err === 'not-set-up') showNote(MSG.notSetUp, false, true);
+      else if (err === 'wrong-host') showNote(MSG.wrongHost, false, true);
       else showNote(r.status === 0 ? MSG.offline : MSG.server, true);
     });
   }
   form.addEventListener('submit', function (ev) { ev.preventDefault(); submit(); });
   // the notice (and this button) hides on resubmit, so keep focus somewhere stable
   retryBtn.addEventListener('click', function () { shortenBtn.focus(); submit(); });
-  urlIn.addEventListener('input', function () { clearError('url'); syncPaste(); });
+  urlIn.addEventListener('input', function () { clearError('url'); hideNote(); syncPaste(); pendingDelete = ''; });
   slugIn.addEventListener('input', function () { clearError('slug'); });
   keyIn.addEventListener('input', function () { clearError('key'); });
 
   /* ---- pasting: a Paste button on touch screens, and paste anywhere on the page ---- */
-  var coarse = window.matchMedia ? window.matchMedia('(pointer: coarse)') : null;
   var canReadClip = !!(navigator.clipboard && typeof navigator.clipboard.readText === 'function');
-  function syncPaste() { pasteBtn.hidden = !(canReadClip && coarse && coarse.matches) || !!urlIn.value; }
+  function syncPaste() { pasteBtn.hidden = !(canReadClip && touch()) || !!urlIn.value; }
   if (coarse && typeof coarse.addEventListener === 'function') coarse.addEventListener('change', syncPaste);
   function putUrl(text) {
     urlIn.value = text;
@@ -409,16 +475,19 @@
     urlIn.focus();
     try { urlIn.setSelectionRange(text.length, text.length); } catch (e) { /* not a text field */ }
   }
+  // a failure is shown in the form's calm note, not only announced: on a phone there
+  // is otherwise nothing to see (Safari and Firefox refuse when their Paste bubble is
+  // dismissed, and an image on the clipboard reads as empty)
   pasteBtn.addEventListener('click', function () {
     if (busy) return;
     navigator.clipboard.readText().then(function (t) {
       t = String(t || '').trim();
-      if (!t) { urlIn.focus(); announce('The clipboard is empty.'); return; }
+      if (!t) { urlIn.focus(); showNote(MSG.clipEmpty, false, true); return; }
       putUrl(t);
       announce('Pasted. Shorten it when you’re ready.');
     }, function () {
       urlIn.focus();
-      announce('Couldn’t read the clipboard. Long-press the field to paste instead.');
+      showNote(MSG.clipDenied, false, true);
     });
   });
   function isTextField(t) {
@@ -426,8 +495,10 @@
     if (t.isContentEditable || t.tagName === 'TEXTAREA') return true;
     return t.tagName === 'INPUT' && /^(text|search|url|tel|email|password|number)$/i.test(t.type);
   }
+  // While the key box is open a stray paste is most likely the key (focus on the
+  // Remember box, say), which must never land in the plain-text Long URL field.
   document.addEventListener('paste', function (e) {
-    if (busy || isTextField(e.target)) return;
+    if (busy || keyOpen() || isTextField(e.target)) return;
     var t = e.clipboardData ? String(e.clipboardData.getData('text') || '').trim() : '';
     if (!t) return;
     e.preventDefault();
@@ -464,6 +535,7 @@
     clearTimeout(copyTimer);
     copyBtn.classList.remove('is-done');
     shortA.classList.remove('is-copied');
+    copyMsg.hidden = true;
     result.hidden = false;
     result.classList.remove('enter');
     void result.offsetWidth;   // restart the entrance for a second link
@@ -607,10 +679,12 @@
       sel.addRange(range);
     } catch (e) { /* nothing more to try */ }
   }
+  function copyFallbackMsg() { return touch() ? MSG.copyTouch : MSG.copyKeys; }
   var copyTimer = 0;
   copyBtn.addEventListener('click', function () {
     if (!current) return;
     copyText(current.short).then(function () {
+      copyMsg.hidden = true;
       copyBtn.classList.add('is-done');
       shortA.classList.add('is-copied');   // a highlighter sweeps under the link
       clearTimeout(copyTimer);
@@ -621,7 +695,10 @@
       announce('Copied');
     }, function () {
       selectText(shortA);
-      announce('Couldn’t copy automatically. The link is selected, so copy it with Ctrl+C or ⌘C.');
+      var m = copyFallbackMsg();
+      copyMsg.textContent = m;
+      copyMsg.hidden = false;
+      announce(m);
     });
   });
 
@@ -635,6 +712,7 @@
   });
 
   againBtn.addEventListener('click', function () {
+    if (busy) return;   // the fields hold what was just sent; an error may still point at them
     urlIn.value = '';
     slugIn.value = '';
     clearError('url');
@@ -686,24 +764,71 @@
     li.appendChild(acts);
     return li;
   }
+  // A rebuild (a new link, a change in another tab) keeps what each row is doing: an
+  // open "Delete this link?", a delete still in flight, its message, and the focus.
+  var deleting = Object.create(null);   // code → true while its DELETE is out
+  var rowMsg = Object.create(null);     // code → { text, calm }
+  var showAll = false;
+  function rowFor(code) { return list.querySelector('li[data-code="' + code + '"]'); }
   function renderRecent(freshCode) {
-    var items = readRecent();
+    var items = readRecent(), i;
+    var asking = Object.create(null), focus = null;
+    var open = list.querySelectorAll('li.confirming');
+    for (i = 0; i < open.length; i++) asking[open[i].getAttribute('data-code')] = true;
+    var act = document.activeElement;
+    var actRow = act && act !== list && list.contains(act) ? act.closest('li[data-code]') : null;
+    if (actRow) focus = { code: actRow.getAttribute('data-code'), action: act.getAttribute('data-action') || '' };
+    var shown = showAll ? items.length : Math.min(items.length, SHOWN_RECENT);
     list.textContent = '';
-    for (var i = 0; i < items.length; i++) list.appendChild(itemNode(items[i], items[i].code === freshCode));
+    for (i = 0; i < shown; i++) {
+      var e = items[i], li = itemNode(e, e.code === freshCode);
+      if (asking[e.code] || deleting[e.code]) showConfirm(li, false);
+      if (deleting[e.code]) markDeleting(li);
+      paintRowMsg(li, rowMsg[e.code]);
+      list.appendChild(li);
+    }
     list.hidden = !items.length;
     emptyBox.hidden = !!items.length;
     countEl.textContent = items.length ? items.length + (items.length === 1 ? ' link' : ' links') : '';
+    moreBox.hidden = items.length <= SHOWN_RECENT;
+    moreBtn.textContent = showAll ? 'Show only the latest ' + SHOWN_RECENT : 'Show all ' + items.length + ' links';
+    moreBtn.setAttribute('aria-expanded', showAll ? 'true' : 'false');
+    if (focus) {
+      var row = rowFor(focus.code);
+      var to = row && (focus.action ? row.querySelector('[data-action="' + focus.action + '"]') : row.querySelector('.r-short'));
+      if (to) to.focus({ preventScroll: true });
+    }
   }
   function findEntry(code) {
     var items = readRecent();
     for (var i = 0; i < items.length; i++) if (items[i].code === code) return items[i];
     return null;
   }
+  moreBtn.addEventListener('click', function () {
+    showAll = !showAll;
+    renderRecent();
+    bringIntoView(moreBtn);
+    announce(showAll ? 'Showing all ' + readRecent().length + ' links.' : 'Showing the latest ' + SHOWN_RECENT + ' links.');
+  });
+
+  function paintRowMsg(li, m) {
+    var old = li.querySelector('.r-msg');
+    if (old) old.remove();
+    if (m) li.appendChild(el('p', 'r-msg' + (m.calm ? ' calm' : ''), m.text));
+  }
+  function setRowMsg(code, text, calm) {
+    if (text) rowMsg[code] = { text: text, calm: !!calm };
+    else delete rowMsg[code];
+    var li = rowFor(code);
+    if (li) paintRowMsg(li, rowMsg[code]);
+  }
+  function clearItemMsg(li) { setRowMsg(li.getAttribute('data-code'), ''); }
 
   function copyFromList(btn, code) {
     var e = findEntry(code);
     if (!e) return;
     copyText(e.short).then(function () {
+      setRowMsg(code, '');
       var use = btn.querySelector('use');
       if (use) use.setAttribute('href', '#i-check');
       btn.classList.add('is-done');
@@ -713,17 +838,25 @@
       }, 1600);
       announce('Copied');
     }, function () {
-      var a = btn.closest('li').querySelector('.r-short');
+      var li = rowFor(code), a = li ? li.querySelector('.r-short') : null;
       if (a) selectText(a);
-      announce('Couldn’t copy automatically. The link is selected, so copy it with Ctrl+C or ⌘C.');
+      var m = copyFallbackMsg();
+      setRowMsg(code, m, true);
+      announce(m);
     });
   }
 
   function askDelete(li) {
     var open = list.querySelectorAll('li.confirming');
-    for (var i = 0; i < open.length; i++) if (open[i] !== li) endConfirm(open[i], false);
+    for (var i = 0; i < open.length; i++) {
+      if (open[i] !== li && !open[i].classList.contains('is-busy')) endConfirm(open[i], false);
+    }
     if (li.classList.contains('confirming')) return;
     clearItemMsg(li);
+    showConfirm(li, true);
+  }
+  function showConfirm(li, focusKeep) {
+    if (li.classList.contains('confirming')) return;
     li.classList.add('confirming');
     var box = el('div', 'r-confirm');
     box.setAttribute('role', 'group');
@@ -740,7 +873,7 @@
     btns.appendChild(del);
     box.appendChild(btns);
     li.appendChild(box);
-    keep.focus();
+    if (focusKeep) keep.focus();
   }
   function endConfirm(li, refocus) {
     li.classList.remove('confirming');
@@ -751,54 +884,58 @@
       if (d) d.focus();
     }
   }
-  function clearItemMsg(li) {
-    var m = li.querySelector('.r-msg');
-    if (m) m.remove();
-  }
-
-  var deleting = Object.create(null);
-  function doDelete(li, code) {
-    if (deleting[code]) return;
-    var k = pickKey();
-    if (!k || !KEY_RE.test(k.key)) {
-      endConfirm(li, false);
-      openKeyBox();
-      setError('key', k ? MSG.keyChars : MSG.keyToDelete);
-      return;
-    }
-    deleting[code] = true;
+  function markDeleting(li) {
     li.classList.add('is-busy');
     li.setAttribute('aria-busy', 'true');
     var yes = li.querySelector('[data-action="confirm-delete"]');
     if (yes) { yes.textContent = 'Deleting…'; yes.setAttribute('aria-disabled', 'true'); }
+  }
+
+  // From the row's Delete, or from the key field once the key was asked for. The row is
+  // looked up afresh each time: the list may be rebuilt while the request is out.
+  function doDelete(code) {
+    if (deleting[code]) return;
+    var li = rowFor(code);
+    var k = pickKey();
+    if (!k || !KEY_RE.test(k.key)) {
+      if (li) endConfirm(li, false);
+      pendingDelete = code;
+      openKeyBox();
+      setError('key', k ? keyProblem(k.key) : MSG.keyToDelete);
+      return;
+    }
+    deleting[code] = true;
+    if (li) { clearItemMsg(li); showConfirm(li, false); markDeleting(li); }
     request('DELETE', API + '?code=' + encodeURIComponent(code), k.key).then(function (r) {
       delete deleting[code];
-      li.classList.remove('is-busy');
-      li.removeAttribute('aria-busy');
+      var cur = rowFor(code);
+      if (cur) { cur.classList.remove('is-busy'); cur.removeAttribute('aria-busy'); }
       var d = r.data || {};
       var err = typeof d.error === 'string' ? d.error : (r.status === 401 ? 'unauthorized' : '');
       if ((r.status >= 200 && r.status < 300 && d.ok === true) || err === 'not-found') {
-        if (!err) acceptKey(k);
-        removeEntry(li, code, err === 'not-found');
+        acceptKey(k);   // a not-found has passed the key check too
+        removeEntry(code, err === 'not-found');
         return;
       }
-      endConfirm(li, false);
-      if (err === 'unauthorized') { rejectKey(k); return; }
-      var msg = err === 'not-set-up' ? MSG.notSetUp : r.status === 0 ? MSG.offline : MSG.deleteFailed;
-      clearItemMsg(li);
-      li.appendChild(el('p', 'r-msg', msg));
+      if (cur) endConfirm(cur, false);
+      if (err === 'unauthorized') { rejectKey(k); pendingDelete = code; return; }
+      var msg = err === 'not-set-up' ? MSG.notSetUp : err === 'wrong-host' ? MSG.wrongHost :
+        r.status === 0 ? MSG.offline : MSG.deleteFailed;
+      setRowMsg(code, msg, false);
       announce(msg);
-      var again = li.querySelector('[data-action="delete"]');
+      var again = cur && cur.querySelector('[data-action="delete"]');
       if (again) again.focus();
     });
   }
-  function removeEntry(li, code, gone) {
+  function removeEntry(code, gone) {
+    var li = rowFor(code);
     var label = bare((findEntry(code) || { short: shortFor('', code) }).short);
-    var next = li.nextElementSibling || li.previousElementSibling;
+    var next = li ? li.nextElementSibling || li.previousElementSibling : null;
     var nextCode = next ? next.getAttribute('data-code') : '';
     writeRecent(readRecent().filter(function (x) { return x.code !== code; }));
+    delete rowMsg[code];
     if (current && current.code === code) hideResult();
-    li.classList.add('leaving');
+    if (li) li.classList.add('leaving');
     setTimeout(function () {
       renderRecent();
       var target = nextCode ? list.querySelector('li[data-code="' + nextCode + '"] .r-short') : null;
@@ -818,7 +955,7 @@
     if (action === 'copy') copyFromList(btn, code);
     else if (action === 'delete') askDelete(li);
     else if (action === 'cancel-delete') endConfirm(li, true);
-    else if (action === 'confirm-delete') doDelete(li, code);
+    else if (action === 'confirm-delete') doDelete(code);
   });
   list.addEventListener('keydown', function (ev) {
     if (ev.key !== 'Escape') return;
@@ -828,7 +965,11 @@
 
   // keep the list and the key in step with other tabs
   window.addEventListener('storage', function (ev) {
-    if (ev.key === null || ev.key === RECENT_STORE) renderRecent();
+    if (ev.key === null || ev.key === RECENT_STORE) {
+      renderRecent();
+      // the link on the card was deleted in another tab: stop offering to copy it
+      if (current && !findEntry(current.code)) hideResult();
+    }
     if (ev.key === null || ev.key === KEY_STORE) {
       var v = cleanKey(lsGet(KEY_STORE));
       if (v) { memKey = v; remembered = true; }

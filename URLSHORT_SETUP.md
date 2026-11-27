@@ -38,8 +38,8 @@ rest of the site is unaffected.
    - Choose type **Secret**, name `URLSHORT_KEY`.
    - For the value, use a long random string, for example from a password manager or
      `openssl rand -base64 24`.
-   - Add it for **Production**. Also add it for **Preview** if you want pull-request previews to
-     be able to create links. Previews share the same namespace.
+   - Add it for **Production**. Links can only be made or deleted at karan98.in itself:
+     pull-request previews and older deployments at `*.pages.dev` addresses refuse to.
 4. **Deploy.**
    - The push in step 2 deploys.
    - If you added the key after that deploy finished, retry the latest deployment so the
@@ -47,6 +47,10 @@ rest of the site is unaffected.
 5. **Use it.**
    - Open **https://karan98.in/urlshort** and paste a link.
    - Enter the key once, leaving **Remember on this device** ticked.
+   - A remembered key is kept in this browser's storage for karan98.in. Any page served
+     under karan98.in can read it, including the GitHub Pages projects the site forwards
+     there (`karan98.in/<project>/`). If that isn't acceptable, untick **Remember**: the key
+     is then kept for that tab only.
 
 ## Everyday use
 - **Custom endings** (`karan98.in/s/resume`): 3–40 letters, digits or hyphens. Case doesn't
@@ -54,14 +58,17 @@ rest of the site is unaffected.
 - **Random codes** are 6 characters with no `0`/`o` or `1`/`l`/`i`, so they survive being read
   aloud.
 - **Recent links** on the page live on the device that made them. You can copy or delete from
-  there.
+  there. The page keeps the latest 200 and shows 20 until you press **Show all**.
 - **On a shared device**, use **Forget key** (under the Shorten button) when you're done. If you
   untick **Remember on this device**, the key is kept for that tab only.
 - **Pasting:** on a computer you can paste a link anywhere on the page; on a phone, use the
   **Paste** button in the link field.
 - **QR codes:** each new link comes with one, which you can save as PNG or SVG.
 - **To change the key**, edit the secret, retry the deployment, and enter the new key on your
-  devices.
+  devices. Only karan98.in accepts writes, so once that deployment is live the old key stops
+  working everywhere, even on older deployments that were built with it.
+- **If an answer gets lost** (a dropped connection, say), **Try again** is safe. It finds the
+  link the first attempt made instead of making a second one, or calling your own ending taken.
 
 ## Limits and behaviour
 - **KV free plan:** 100,000 link opens and 1,000 new or deleted links a day (resets at
@@ -69,7 +76,11 @@ rest of the site is unaffected.
 - **Timing:** a new link works everywhere almost at once. A deleted link may keep redirecting
   for up to about a minute in some places, because of KV's edge caching.
 - **Redirects:** links answer **302**, not 301, so a deleted link stops working for people who
-  have already used it. They're also sent `noindex`.
+  have already used it. They're also sent `noindex`. If KV itself has a problem, a short link
+  shows a "try again in a minute" page (503), never a "doesn't lead anywhere" one.
+- **One ending, two links at once:** KV can't claim an ending atomically. If two different
+  links are given the same ending at the same moment (from two tabs, say), both can report
+  success, and the later one wins.
 - **Accepted links:** only `http(s)` links are saved. A bare address gets `https://`.
   `user:password@` links and links to another `karan98.in/s/…` are refused.
 - **On the GitHub Pages mirror,** which has no Functions, `/urlshort` forwards to karan98.in.

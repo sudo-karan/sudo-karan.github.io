@@ -60,7 +60,9 @@ function isOwnPath(pathname) {
   // The link shortener: its page (urlshort.html) and the short links themselves
   // (functions/s/[code].js), which shouldn't wait on a trip to GitHub first.
   if (pathname === "/urlshort" || pathname === "/urlshort/") return true;
-  if (pathname.startsWith("/s/")) return true;
+  // Any case: Pages routes /S/<code> to the same Function, and a link printed
+  // in capitals (KARAN98.IN/S/CV) arrives like that.
+  if (/^\/s\//i.test(pathname)) return true;
   // A top-level file — one path segment with an extension — is this repo's own
   // static file: /index.html, /404.html, /robots.txt, /sitemap.xml,
   // /favicon.ico, /site.webmanifest, etc. GitHub Pages projects are always
