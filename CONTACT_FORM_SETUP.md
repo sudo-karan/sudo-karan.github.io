@@ -29,8 +29,8 @@ every message to a **Google Sheet** and **emails** you.
 ## Secrets & keys at a glance
 | Name | Where it lives | Public? |
 |---|---|---|
-| Turnstile **site key** | `assets/js/data.js` | yes (by design) |
-| Turnstile **secret key** | Apps Script property `TURNSTILE_SECRET` (verifies both paths) | no |
+| Turnstile **site key** | `assets/js/data.js`, and a copy in `assets/js/urlshort.js` (`TS_SITE_KEY`) for the link shortener's sign-in | yes (by design) |
+| Turnstile **secret key** | Apps Script property `TURNSTILE_SECRET` (verifies both paths, and the link shortener's code requests) | no |
 | RSA **public key** | `assets/js/data.js` (`contact.publicKey`), and a copy in `assets/js/urlshort.js` (`SITE_KEY`): the link shortener seals its requests with it too | yes (by design) |
 | RSA **private key** | Cloudflare Function env `PRIVATE_KEY` — the **only** env var it needs; the link shortener's Function opens its sealed requests with it too | **no** |
 | `OBFUSCATION_KEY` | `OBF_KEY` in `app.js`, the Function, and Apps Script property (same value) | yes-ish (obscurity) |
@@ -67,7 +67,8 @@ this order:
 ## 1. Cloudflare Turnstile
 1. Cloudflare dashboard → **Turnstile** → your widget (Site Key `0x4AAAAAADsvK3etT1iNEaDP`).
 2. **Hostnames** — include every domain the form runs on: `karan98.in`,
-   `sudo-karan.github.io`, and your `*.pages.dev` host.
+   `sudo-karan.github.io`, and your `*.pages.dev` host. (The link shortener's sign-in at
+   `karan98.in/urlshort` uses the same widget.)
 3. Copy the widget's **Secret Key**.
 
 ## 2. Google Sheet + Apps Script

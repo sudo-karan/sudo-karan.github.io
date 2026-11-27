@@ -15,6 +15,7 @@ flagged. Every link made or deleted, and every visit to one, is logged to your G
 | Storage | a Cloudflare **KV namespace** bound as `URLSHORT` (the links), and a **D1 database** bound as `URLSHORT_DB` (the log), both in `wrangler.toml` |
 | Owner key | the Cloudflare **secret** `URLSHORT_KEY` |
 | Email codes | the contact form's Apps Script (`app=urlshort`): allow list `URLSHORT_WHITELIST`, and the secret `URLSHORT_GATE_SECRET`, set both there and in Cloudflare |
+| Bot check | Cloudflare Turnstile, the contact form's widget (site key in `assets/js/data.js` and `assets/js/urlshort.js`) and its `TURNSTILE_SECRET` Script Property, already set: a code is only sent once the check has passed |
 | The Sheet | the contact form's spreadsheet, in two tabs it adds: **Short links** and **Link visits** |
 | Sealing | the contact form's key pair: the page seals each new link's request with the public key (`SITE_KEY` in `assets/js/urlshort.js`, a copy of `contact.publicKey` in `data.js`), and the Function opens it with the contact form's Cloudflare secret `PRIVATE_KEY`, which is already set |
 
@@ -191,6 +192,15 @@ million cells, so this keeps a flood of visits from ever filling it. Two full ta
 - **Email codes** come from the Apps Script's Gmail and share the contact form's daily cap
   (`OTP_DAILY_CAP`, 85 by default). Each address can ask for 3 codes an hour. Answers take about
   4 seconds on purpose, and they never say whether an address is on the list.
+- **The bot check.** When the email sign-in opens, the page shows Cloudflare's "Verify you are
+  human" check, the same Turnstile widget as the contact form (it usually passes by itself).
+  "Send code" carries its token, which the Apps Script checks with Cloudflare before anything
+  else, so a script can't make the site send codes. A failed check uses none of the limits
+  above, and its answer is the same for every address. Cloudflare's script is fetched only when
+  the email sign-in opens, never for the owner key. The widget's hostnames in Cloudflare (Turnstile
+  → the widget) must include `karan98.in`, as they already do for the contact form. If
+  `TURNSTILE_SECRET` were removed from the Apps Script, codes would go out without the check,
+  as the contact form's messages would.
 - **The Sheet** fills every 5 minutes, so the newest events can take that long to appear. If it
   stops filling, the `syncShortLinks` runs show as **Failed** on the Apps Script's
   **Executions** page (Google usually emails you about failed runs too), and the error says
@@ -216,6 +226,10 @@ million cells, so this keeps a flood of visits from ever filling it. Two full ta
 - **If every new link gets "Something went wrong on the server"** right after the site's key
   pair was changed, `PRIVATE_KEY` and the page's `SITE_KEY` don't match yet: retry the latest
   deployment (see the rotation steps in [`CONTACT_FORM_SETUP.md`](CONTACT_FORM_SETUP.md)).
+- **If "Send code" says the Cloudflare check didn't pass** for everyone, the Apps Script's
+  `TURNSTILE_SECRET` isn't the secret of the widget with site key `0x4AAAAAADsvK3etT1iNEaDP`
+  (Cloudflare → Turnstile). **If it says the check couldn't load,** something on that device
+  (an ad blocker, a network filter) blocks `challenges.cloudflare.com`; the owner key still works.
 - **If every code is accepted but making a link then asks for a new code,** the two
   `URLSHORT_GATE_SECRET` values (Cloudflare and the Apps Script) aren't the same. Copy one into
   the other, and retry the latest deployment if you changed Cloudflare's.

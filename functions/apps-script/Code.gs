@@ -37,7 +37,9 @@
 
    With &app=urlshort the same protocol as the PhD explorer's serves the link shortener
    (karan98.in/urlshort, in this repository), under the action names send-code and
-   check-code, and every answer carries app: 'urlshort' (see urlshortAnswer): codes go only
+   check-code, and every answer carries app: 'urlshort' (see urlshortAnswer). send-code also
+   takes ts, the token of the page's Cloudflare Turnstile check, checked with TURNSTILE_SECRET
+   (else { ok: false, reason: 'bot-check' }, the same for every address). Codes go only
    to URLSHORT_WHITELIST, answers don't say who is listed, and a right code gets
    { verified: true, token, exp }: the token over { email, exp, aud: 'urlshort' }, signed
    with URLSHORT_GATE_SECRET, good for URLSHORT_PASS_HOURS (default 24). Nobody gets one
@@ -50,7 +52,8 @@
    email table.
 
    Script Properties (Project Settings → Script properties):
-     TURNSTILE_SECRET  - Cloudflare Turnstile secret key (for the { obf } path)
+     TURNSTILE_SECRET  - Cloudflare Turnstile secret key (for the { obf } path, and the link
+                         shortener's code requests)
      RECIPIENT         - where to email submissions
      SHARED_SECRET     - must equal the Cloudflare Function's SHARED_SECRET env
      OBFUSCATION_KEY   - must equal OBF_KEY in the website's app.js (defaults below)
@@ -240,7 +243,7 @@ function doGet(e) {
   var action = p.action;
   var result;
   if (p.app === PHD_APP) return respond(phdAnswer(action, p.email, p.code), p.callback);
-  if (p.app === URLSHORT_APP) return respond(urlshortAnswer(action, p.email, p.code), p.callback);
+  if (p.app === URLSHORT_APP) return respond(urlshortAnswer(action, p.email, p.code, p.ts), p.callback);
   if (action === 'send-otp') result = sendOtp(p.email, p.flow, p.app);
   else if (action === 'verify-otp') result = verifyOtp(p.email, p.code, p.app);
   else result = { ok: true, note: 'POST only' };
@@ -559,8 +562,8 @@ var URLSHORT_NS = 'urlshort_'; // cache-key prefix: the shortener's codes and ho
 // know, so it sends nothing and answers { ok: true, note: 'POST only' }. Every answer from
 // here carries app: 'urlshort' (listed or not, so it says nothing about the list), which is
 // how the page tells the two apart and says signing in isn't switched on yet.
-function urlshortAnswer(action, email, code) {
-  var a = action === 'send-code' ? urlshortSend(email)
+function urlshortAnswer(action, email, code, ts) {
+  var a = action === 'send-code' ? urlshortSend(email, ts)
     : action === 'check-code' ? urlshortVerify(email, code)
     : { ok: false, reason: 'bad-request' };
   a.app = URLSHORT_APP;
@@ -608,18 +611,41 @@ function urlshortToken(email, secret, exp) {
   return payload + '.' + Utilities.base64EncodeWebSafe(sig).replace(/=+$/, '');
 }
 
-function urlshortSend(email) {
+function urlshortSend(email, ts) {
   var start = Date.now();
-  var answer = urlshortSendNow(normEmail(email), start);
+  var answer = urlshortSendNow(normEmail(email), start, ts);
   var wait = PHD_ANSWER_MS - (Date.now() - start);
   if (wait > 0) Utilities.sleep(wait);
   return answer;
 }
 
 // As phdSendNow: the same answer whether or not the address is listed.
-function urlshortSendNow(email, now) {
+// The page's Cloudflare check (the contact form's Turnstile widget, its token sent as ts) is
+// checked with TURNSTILE_SECRET before the address is looked at, so its answer is the same for
+// every address, and a failed check takes no slot of the hourly or daily limits. Without
+// TURNSTILE_SECRET there is no check, as for the contact form. Only a token made for the page's
+// own action (URLSHORT_TS_ACTION) counts.
+var URLSHORT_TS_ACTION = 'urlshort-code';
+function urlshortHuman(token) {
+  var secret = String(PropertiesService.getScriptProperties().getProperty('TURNSTILE_SECRET') || '').trim();
+  if (!secret) return true;
+  token = String(token == null ? '' : token);
+  if (!token || token.length > 2048) return false;
+  try {
+    var resp = UrlFetchApp.fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'post', payload: { secret: secret, response: token }, muteHttpExceptions: true
+    });
+    var vr = JSON.parse(resp.getContentText());
+    return !!vr && vr.success === true && vr.action === URLSHORT_TS_ACTION;
+  } catch (e) {
+    return false;
+  }
+}
+
+function urlshortSendNow(email, now, ts) {
   if (!validEmail(email)) return { ok: false, reason: 'bad-email' };
   if (!urlshortSecret()) return { ok: false, reason: 'not-set-up' };
+  if (!urlshortHuman(ts)) return { ok: false, reason: 'bot-check' };
   var listed = urlshortListed(email);
   var cache = CacheService.getScriptCache();
   var h = otpHash(email);

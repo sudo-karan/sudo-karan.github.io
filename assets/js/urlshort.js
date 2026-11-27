@@ -14,6 +14,12 @@
   // load either. A new link's request is sealed for it (see seal), as the contact form's
   // messages are; its private half is the Cloudflare secret PRIVATE_KEY. Change both together.
   var SITE_KEY = 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1JMTLtINAoNvbqmYU1L+5x1rkx9hhvmhlsbWeTEmoZtaAZHKCSWih2fBnqY5ug/Z5DYIM2bb5/jJ7/cFp42fuAtgLDYZ/N8cNcRZJ61Lm22wciD3li9U1fpGfKGzoq2NrjvPTWnYDPVErfR65/ROIBBq2AQU60JRqLyed3qWabKW7MlXHJ5KD8ea1aobhWYB6qSe9ETCHcMVscQCR3glQUlvAhN5Y9YGQzfhJ4ndOnA3KSnuG+Otptx6p5FY+ebvVZkhOyTs9u5wDy1fwc30aDgK/XCCidI76enj9nm+rXx47RcPMCo2fnc3IhpcOIqzjMMs5Uc1gmoA8nmYhSKk5QIDAQAB';
+  // The Cloudflare check that a person, not a script, is asking for a sign-in code: the contact
+  // form's Turnstile widget (contact.turnstileSiteKey in data.js), whose token the Apps Script
+  // checks with TURNSTILE_SECRET. Cloudflare's script is fetched only once the email sign-in shows.
+  var TS_SITE_KEY = '0x4AAAAAADsvK3etT1iNEaDP';
+  var TS_SCRIPT = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+  var TS_ACTION = 'urlshort-code';   // the Apps Script takes only tokens made for this
   var KEY_STORE = 'urlshort:key';
   var PASS_STORE = 'urlshort:pass';
   var RECENT_STORE = 'urlshort:recent';
@@ -57,6 +63,9 @@
     tooManyTries: 'Too many wrong tries for that code. Send a new code.',
     signInBusy: 'The sign-in service is busy. Try again in a moment.',
     signInOff: 'Signing in by email isn’t switched on yet.',
+    needHuman: 'Wait for the Cloudflare check to finish (tick it if it asks), then try again.',
+    humanFailed: 'The Cloudflare check couldn’t load. Check your connection and try again.',
+    humanAgain: 'The Cloudflare check didn’t pass. Try it again, then send the code.',
     quota: 'No more sign-in codes can be sent today. Please try again tomorrow.',
     signInOffline: 'Couldn’t reach the sign-in service. Check your connection and try again.',
     sendFailed: 'Couldn’t send a code just now. Please try again.',
@@ -103,6 +112,7 @@
   var keyState = $('keyState'), keyStateText = $('keyStateText'), keyStateIcon = $('keyStateIcon'), signOutBtn = $('signOut');
   var emailMode = $('emailMode'), emailIn = $('email'), sendBtn = $('sendCode'), codeField = $('codeField');
   var otpIn = $('otp'), verifyBtn = $('verify'), resendBtn = $('resend'), modeBtn = $('modeSwitch'), keyField = $('keyField');
+  var tsBox = $('tsWidget');
   var ttlChips = $('ttlChips'), ttlCustom = $('ttlCustom'), ttlNum = $('ttlNum'), ttlUnit = $('ttlUnit'), ttlHint = $('ttlHint');
   var neverChip = $('ttlNever'), ttlInputs = ttlChips.querySelectorAll('input[name="ttl"]');
   var neverIn = neverChip.querySelector('input'), defaultIn = ttlChips.querySelector('input[value="' + TTL_DEFAULT + '"]');
@@ -452,6 +462,47 @@
     keyField.hidden = m !== 'key';
     modeBtn.textContent = m === 'email' ? 'Use the owner key instead' : 'Use an email code instead';
     syncNever();
+    syncHuman();
+  }
+
+  /* ---- the Cloudflare check before a code is sent (as the contact form's) ---- */
+  var ts = { state: 'idle', id: null };   // idle → loading → ready, or failed
+  // Loaded the first time the email sign-in shows, and never for the owner key alone.
+  function syncHuman() { if (keyOpen() && mode === 'email') tsLoad(); }
+  function tsLoad() {
+    if (ts.state === 'ready') { tsRender(); return; }
+    if (ts.state === 'loading') return;
+    ts.state = 'loading';
+    var s = document.createElement('script');
+    s.src = TS_SCRIPT;
+    s.async = true;
+    s.onload = function () {
+      ts.state = window.turnstile && typeof window.turnstile.render === 'function' ? 'ready' : 'failed';
+      tsRender();
+    };
+    s.onerror = function () { ts.state = 'failed'; if (s.parentNode) s.parentNode.removeChild(s); };
+    document.head.appendChild(s);
+  }
+  // Drawn once, while it shows, so its width is known: narrower than 300px, it's the compact one.
+  function tsRender() {
+    if (ts.state !== 'ready' || ts.id !== null || !tsBox || !keyOpen() || emailMode.hidden) return;
+    try {
+      var id = window.turnstile.render(tsBox, {
+        sitekey: TS_SITE_KEY, action: TS_ACTION, theme: 'auto', 'response-field': false,
+        size: tsBox.clientWidth > 0 && tsBox.clientWidth < 300 ? 'compact' : 'normal'
+      });
+      ts.id = id == null ? null : id;
+      if (ts.id === null) ts.state = 'failed';
+    } catch (e) { ts.state = 'failed'; }
+  }
+  function tsToken() {
+    if (ts.id === null) return '';
+    try { return window.turnstile.getResponse(ts.id) || ''; } catch (e) { return ''; }
+  }
+  // a token is good for one request, so the next one waits for a fresh check
+  function tsReset() {
+    if (ts.id === null) return;
+    try { window.turnstile.reset(ts.id); } catch (e) { /* the next send asks for the check again */ }
   }
   function openKeyBox(m) {
     if (!keyOpen()) {
@@ -469,7 +520,7 @@
         if (f && keyBox.contains(f)) bringIntoView(f);
       });
     }
-    if (m && m !== mode) setMode(m); else syncNever();
+    if (m && m !== mode) setMode(m); else { syncNever(); syncHuman(); }
     syncPaste();
   }
   function closeKeyBox() {
@@ -671,21 +722,32 @@
     clearError('otp');
     if (!email) { setError('email', MSG.needEmail); return; }
     if (email.length > 254 || !EMAIL_RE.test(email)) { setError('email', MSG.badEmail); return; }
+    var human = tsToken();
+    if (!human) {
+      var failed = ts.state === 'failed';
+      if (failed) ts.state = 'idle';   // try loading it again
+      syncHuman();
+      setError(where, failed ? MSG.humanFailed : MSG.needHuman, 'say');
+      return;
+    }
     setSigning(again ? resendBtn : sendBtn);
     announce('Sending a code…');
     // send-code, not send-otp: a script from before the shortener doesn't know it, so it
     // sends nothing (see urlshortAnswer in Code.gs), and its answer has no app: 'urlshort'
-    jsonp({ app: 'urlshort', action: 'send-code', email: email }).then(function (r) {
+    jsonp({ app: 'urlshort', action: 'send-code', email: email, ts: human }).then(function (r) {
       var to = stillHere() ? undefined : null;
+      tsReset();
       setSigning(null);
       if (!keyOpen()) return;   // done another way meanwhile (the owner key, say): nothing to say
       if (r.app !== 'urlshort') { setError(where, MSG.signInOff, 'say', to); return; }
       if (r.ok === true) { codeSent(email); return; }
       if (r.reason === 'bad-email') { resetCode(); setError('email', MSG.badEmail, '', to); return; }
+      if (r.reason === 'bot-check') { setError(where, MSG.humanAgain, 'say', to); return; }
       setError(where, r.reason === 'rate-limit' ? tooManyCodes(r.retryMins) : r.reason === 'quota' ? MSG.quota :
         r.reason === 'not-set-up' ? MSG.signInOff : MSG.sendFailed, 'say', to);
     }, function (err) {
       var to = stillHere() ? undefined : null;
+      tsReset();
       setSigning(null);
       if (keyOpen()) setError(where, codeTrouble(err, true), 'say', to);
     });
