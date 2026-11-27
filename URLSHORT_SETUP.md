@@ -61,8 +61,11 @@ contact form) to be added.
      database_name = "urlshort-log"
      database_id = "<the D1 ID from step 2>"
      ```
-   - Commit and push. Never commit a made-up ID: a deploy that names an unknown namespace or
-     database fails. (Or send me the two IDs and I'll do it.)
+   - If you recreate either one: put its new ID in both places it appears (the KV ID is also
+     under `[env.preview]`), then commit and push. Never commit a made-up ID: a deploy that
+     names an unknown namespace or database fails.
+   - Pull-request previews (`*.pages.dev`) get the links but not the log, so testing on a
+     preview adds nothing to the Sheet. They refuse to make or delete links either way.
 4. **Add the two secrets in Cloudflare.**
    - Go to **Workers & Pages → sudo-karan-github-io → Settings → Variables and Secrets → Add**,
      type **Secret**, for **Production**:
@@ -85,8 +88,8 @@ contact form) to be added.
      permissions it asks for: this code runs on a timer and connects to karan98.in to collect
      the log, which the old code didn't. From then on the **Short links** and **Link visits**
      tabs fill every 5 minutes. Running it again is harmless. Runs before step 6's deployment
-     is live may fail (HTTP 404, 503 or 401) and Google may email you about them; that's
-     expected.
+     is live fail, and Google may email you about them; that's expected: HTTP 405 until the
+     pull request is merged, then 503 or 401 until both secrets are set and match.
    - Then **Deploy → Manage deployments → ✎ Edit → Version: New version → Deploy.** The web
      app's URL stays the same. (Approving first means the sign-in never runs without the
      permissions this code needs.)
