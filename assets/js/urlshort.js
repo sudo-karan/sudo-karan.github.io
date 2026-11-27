@@ -20,6 +20,7 @@
   var TS_SITE_KEY = '0x4AAAAAADsvK3etT1iNEaDP';
   var TS_SCRIPT = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
   var TS_ACTION = 'urlshort-code';   // the Apps Script takes only tokens made for this
+  var TS_WAIT_MS = 8000;             // how long "Send code" waits for a check that's still going
   var KEY_STORE = 'urlshort:key';
   var PASS_STORE = 'urlshort:pass';
   var RECENT_STORE = 'urlshort:recent';
@@ -499,6 +500,17 @@
     if (ts.id === null) return '';
     try { return window.turnstile.getResponse(ts.id) || ''; } catch (e) { return ''; }
   }
+  // Resolves with a token as soon as there is one, or '' once the check has failed or ms is up.
+  function tsWait(ms) {
+    return new Promise(function (resolve) {
+      var until = Date.now() + ms;
+      (function poll() {
+        var t = tsToken();
+        if (t || ts.state === 'failed' || Date.now() >= until) { resolve(t); return; }
+        setTimeout(poll, 150);
+      })();
+    });
+  }
   // a token is good for one request, so the next one waits for a fresh check
   function tsReset() {
     if (ts.id === null) return;
@@ -724,10 +736,19 @@
     if (email.length > 254 || !EMAIL_RE.test(email)) { setError('email', MSG.badEmail); return; }
     var human = tsToken();
     if (!human) {
-      var failed = ts.state === 'failed';
-      if (failed) ts.state = 'idle';   // try loading it again
+      // The check usually passes by itself within a few seconds of the panel opening, so a quick
+      // "Send code" (or an address filled in by the browser) waits for it, the button showing
+      // it's at work, and then sends. If it needs a tick that doesn't come, or can't load, say so.
+      if (ts.state === 'failed') ts.state = 'idle';   // try loading it again
       syncHuman();
-      setError(where, failed ? MSG.humanFailed : MSG.needHuman, 'say');
+      setSigning(again ? resendBtn : sendBtn);
+      announce('Waiting for the Cloudflare check…');
+      tsWait(TS_WAIT_MS).then(function (t) {
+        setSigning(null);
+        if (!keyOpen() || mode !== 'email') return;   // moved on meanwhile
+        if (t) sendCode(again);
+        else setError(where, ts.state === 'failed' ? MSG.humanFailed : MSG.needHuman, 'say');
+      });
       return;
     }
     setSigning(again ? resendBtn : sendBtn);

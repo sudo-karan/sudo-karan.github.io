@@ -207,7 +207,8 @@ million cells, so this keeps a flood of visits from ever filling it. Two full ta
   what to do. To see it at once, pick **syncShortLinks** in the editor and press **Run**. In
   short:
   - HTTP 403 with a Cloudflare challenge page: **Bot Fight Mode** (Security → Bots) is stopping
-    Google's call. Turn it off, or add a rule that skips it for `/api/urlshort/log`.
+    Google's call. Turn it off: it can't be skipped for a single path. (On Pro and above, Super
+    Bot Fight Mode can be, with a WAF custom rule that skips it for `/api/urlshort/log`.)
   - HTTP 401: the two `URLSHORT_GATE_SECRET` values (Cloudflare and the Apps Script) differ.
   - HTTP 503 `not-set-up`: the D1 database isn't bound yet, or Cloudflare has no
     `URLSHORT_GATE_SECRET` (add it, then retry the latest deployment).

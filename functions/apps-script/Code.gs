@@ -820,7 +820,7 @@ function urlshortWhy(code, text) {
   if (code === 401) return 'this script\'s URLSHORT_GATE_SECRET isn\'t the same as Cloudflare\'s: copy one into the other (and retry the deployment if you changed Cloudflare\'s)';
   // a challenge page (403, or 503 for some modes) rather than the log's own JSON
   var challenge = /just a moment|challenge-platform|cf-chl|attention required/i.test(t);
-  if (challenge || (code === 403 && !/wrong-host/.test(t))) return 'Cloudflare stopped Google\'s call, probably Bot Fight Mode (Security → Bots): turn it off, or skip it for /api/urlshort/log';
+  if (challenge || (code === 403 && !/wrong-host/.test(t))) return 'Cloudflare stopped Google\'s call, probably Bot Fight Mode (Security → Bots): turn it off, since it can\'t be skipped for one path (on Pro and above, Super Bot Fight Mode can, with a WAF custom rule that skips it for /api/urlshort/log)';
   if (code === 403) return 'the log answers only at karan98.in itself';
   if (code >= 500) return 'karan98.in had a problem; the next run tries again';
   return 'karan98.in answered in a way this script doesn\'t expect';
@@ -836,7 +836,10 @@ function syncShortLinks() {
   var secret = urlshortSecret();
   if (!secret) throw new Error('syncShortLinks: add the Script Property URLSHORT_GATE_SECRET, the same value as Cloudflare\'s secret of that name (and not ICTD_GATE_SECRET\'s or PHD_GATE_SECRET\'s)');
   var lock = LockService.getUserLock(); // not the script lock, which the sign-ins hold briefly
-  if (!lock.tryLock(1000)) return null; // the previous run is still going
+  if (!lock.tryLock(1000)) {             // the previous run is still going
+    console.log('syncShortLinks: another run was still going, so this one did nothing.');
+    return null;
+  }
   var wrote = 0;
   try {
     var props = PropertiesService.getScriptProperties();
@@ -894,12 +897,19 @@ function installShortLinkSync() {
   });
   ScriptApp.newTrigger('syncShortLinks').timeBased().everyMinutes(5).create();
   var ss = urlshortSpreadsheet();
-  urlshortTab(ss, 'Short links', URLSHORT_MADE_COLS);
-  urlshortTab(ss, 'Link visits', URLSHORT_VISIT_COLS);
+  var made = urlshortTab(ss, 'Short links', URLSHORT_MADE_COLS), seen = urlshortTab(ss, 'Link visits', URLSHORT_VISIT_COLS);
   var n = syncShortLinks();   // throws, saying what to fix, if karan98.in doesn't answer as it should
-  var msg = 'All set: the "Short links" and "Link visits" tabs are in "' + ss.getName() + '" and fill every 5 minutes. ' +
-    (n === null ? 'A sync was already running.' : n ? n + ' event' + (n === 1 ? ' was' : 's were') + ' copied just now.' :
-      'Nothing has been logged yet: make a link (or open one) and it shows here within 5 minutes.');
+  var where = 'the "Short links" and "Link visits" tabs are in "' + ss.getName() + '"';
+  var msg;
+  if (n === null) {
+    msg = 'The 5-minute timer is set and ' + where + ', but a timer run was going, so this couldn\'t check the setup just now: run syncShortLinks in a minute, or look at Executions.';
+  } else {
+    var before = parseInt(PropertiesService.getScriptProperties().getProperty('urlshort_log_last') || '0', 10) > 0 ||
+      made.getLastRow() > 1 || seen.getLastRow() > 1;
+    msg = 'All set: ' + where + ' and fill every 5 minutes. ' +
+      (n ? n + ' event' + (n === 1 ? ' was' : 's were') + ' copied just now.' :
+        before ? 'Nothing new since the last sync.' : 'Nothing has been logged yet: make a link (or open one) and it shows here within 5 minutes.');
+  }
   console.log(msg);
   return msg;
 }
