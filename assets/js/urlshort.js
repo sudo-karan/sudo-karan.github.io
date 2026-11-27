@@ -40,6 +40,7 @@
     copyKeys: 'Couldn’t copy automatically. Select the link and copy it with Ctrl+C or ⌘C.',
     copyTouch: 'Couldn’t copy automatically. Press and hold the link to copy it.',
     listTabOnly: 'This browser’s storage is full, so this list is kept for this tab only.',
+    listOff: 'This browser isn’t keeping data for this site, so this list is kept for this tab only.',
     listGone: 'That link is already off the list.',
     offline: 'Couldn’t reach the shortener. Check your connection and try again.',
     server: 'Something went wrong on the server. Please try again.',
@@ -63,7 +64,7 @@
   var note = $('formNote'), noteText = $('formNoteText'), retryBtn = $('retry'), forgetBtn = $('forgetKey');
   var keyState = $('keyState'), keyStateText = $('keyStateText'), pasteBtn = $('paste');
   var statusEl = $('status'), result = $('result'), shortA = $('short'), openA = $('open');
-  var copyBtn = $('copy'), shareBtn = $('share'), againBtn = $('again'), copyMsg = $('copyMsg');
+  var copyBtn = $('copy'), shareBtn = $('share'), againBtn = $('again'), copyMsg = $('copyMsg'), ksNote = $('ksNote');
   var qrBox = $('qr'), qrFigure = $('qrFigure'), qrSave = $('qrSave'), qrSvgBtn = $('qrSvg');
   var origEl = $('orig'), dateEl = $('resultDate');
   var list = $('recent'), emptyBox = $('recentEmpty'), countEl = $('recentCount'), recentTitle = $('recentTitle');
@@ -84,10 +85,16 @@
   function lsGet(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k, v) { try { window.localStorage.setItem(k, v); return true; } catch (e) { return false; } }
   function lsDel(k) { try { window.localStorage.removeItem(k); } catch (e) { /* storage unavailable */ } }
-  var lsOk = (function () {
-    try { window.localStorage.setItem('urlshort:probe', '1'); window.localStorage.removeItem('urlshort:probe'); return true; }
-    catch (e) { return false; }
+  // '' if storage takes writes; else 'full' (the space every page on karan98.in shares is
+  // used up, though what is there can still be read) or 'off' (the browser keeps no data)
+  var lsWhy = (function () {
+    try { window.localStorage.setItem('urlshort:probe', '1'); window.localStorage.removeItem('urlshort:probe'); return ''; }
+    catch (e) {
+      var n = e && e.name, c = e && e.code;
+      return n === 'QuotaExceededError' || n === 'NS_ERROR_DOM_QUOTA_REACHED' || c === 22 || c === 1014 ? 'full' : 'off';
+    }
   }());
+  var lsOk = !lsWhy;   // the stored list is this tab's list (false: this tab's changes didn't fit)
 
   function cleanKey(v) {
     v = typeof v === 'string' ? v.trim() : '';
@@ -95,7 +102,7 @@
   }
   var memKey = cleanKey(lsGet(KEY_STORE));   // the key in use, remembered or for this tab only
   var remembered = !!memKey;
-  var memRecent = [];
+  var memRecent = null;     // this tab's own copy of the list, once a change to it couldn't be saved
   var pendingDelete = '';   // the code of a delete that is waiting for the owner key
 
   function httpUrl(s) {
@@ -118,7 +125,8 @@
   }
   function readRecent() {
     var raw = memRecent;
-    if (lsOk) {
+    // storage, unless this tab holds changes it couldn't save (full storage still reads)
+    if (lsOk || !raw) {
       raw = [];
       var s = lsGet(RECENT_STORE);
       if (s) { try { raw = JSON.parse(s); } catch (e) { raw = []; } }
@@ -131,23 +139,24 @@
     }
     return out;
   }
-  // Saves the list, newest first. Returns '' or, when not all of it fits, what to tell
-  // the owner. Storage is shared with every page on karan98.in and can fill up: then as
-  // many of the newest are saved as fit (fewer always fit in less room), and if not even
-  // the newest fits, the list stays in this tab's memory.
+  // Saves the list, newest first. Returns '' or, when not all of it could be saved, what
+  // to tell the owner. Storage is shared with every page on karan98.in and can fill up:
+  // then as many of the newest are saved as fit (fewer always fit in less room). If not
+  // even the newest fits, or the browser keeps no data, the list stays in this tab's
+  // memory, and every later change tries storage again.
   function saveRecent(items) { return lsSet(RECENT_STORE, JSON.stringify(items)); }
   function writeRecent(items) {
     memRecent = items.slice(0, MAX_RECENT);
-    var n = memRecent.length;
-    if (!lsOk || saveRecent(memRecent)) return '';
-    var lo = 0, hi = n;   // the newest lo fit; the newest hi don't
+    if (saveRecent(memRecent)) { lsOk = true; return ''; }
+    var lo = 0, hi = memRecent.length;   // the newest lo fit; the newest hi don't
     while (hi - lo > 1) {
       var mid = (lo + hi) >> 1;
       if (saveRecent(memRecent.slice(0, mid))) lo = mid; else hi = mid;
     }
     // each write that worked was bigger than the one before, so the last is the newest lo
-    if (!lo) { lsOk = false; return MSG.listTabOnly; }
-    var gone = n - lo;
+    if (!lo) { lsOk = false; return lsWhy === 'off' ? MSG.listOff : MSG.listTabOnly; }
+    lsOk = true;
+    var gone = items.length - lo;   // counting one the 200 cap drops on the way
     return 'This browser’s storage is full, so the ' + (gone === 1 ? 'oldest link is' : gone + ' oldest links are') +
       ' off the list. ' + (gone === 1 ? 'It still works.' : 'They still work.');
   }
@@ -242,6 +251,7 @@
   function setError(name, msg) {
     var f = fields[name];
     f.err.lastElementChild.textContent = msg;
+    f.err.classList.remove('calm');
     f.err.hidden = false;
     f.box.classList.add('invalid');
     f.input.setAttribute('aria-invalid', 'true');
@@ -252,6 +262,7 @@
     var f = fields[name];
     if (f.err.hidden) return;
     f.err.hidden = true;
+    f.err.classList.remove('calm');
     // aria-describedby still points here, and hidden text it points at is read out
     f.err.lastElementChild.textContent = '';
     f.box.classList.remove('invalid');
@@ -298,8 +309,10 @@
   // a request with this key just succeeded: keep it, and remember it if asked
   function acceptKey(k) {
     if (!k.typed) {
-      // the key came from storage (another tab saved it, say): a box still asking is moot
-      if (keyOpen()) closeKeyBox();
+      // The key came from storage (another tab saved it, say), so a box still asking for
+      // one is moot: unless something is typed in it, a delete waits on it (doDelete
+      // closes the box for its own), or no key is at hand any more (Forget key since).
+      if (keyOpen() && memKey && !keyIn.value.trim() && !pendingDelete) closeKeyBox();
       return;
     }
     memKey = k.key;
@@ -353,12 +366,12 @@
 
   /* ---- shorten ---- */
   var busy = false;
-  function setBusy(on) {
+  function setBusy(on, label) {
     busy = on;
     form.setAttribute('aria-busy', on ? 'true' : 'false');
     shortenBtn.setAttribute('aria-disabled', on ? 'true' : 'false');
     shortenBtn.classList.toggle('is-busy', on);
-    btnLabel.textContent = on ? 'Shortening…' : 'Shorten link';
+    btnLabel.textContent = on ? label || 'Shortening…' : 'Shorten link';
     // the keepsake must show what was sent, so nothing changes while a request is out
     urlIn.readOnly = slugIn.readOnly = keyIn.readOnly = on;
     againBtn.setAttribute('aria-disabled', on ? 'true' : 'false');
@@ -515,14 +528,17 @@
     urlIn.focus();
     try { urlIn.setSelectionRange(text.length, text.length); } catch (e) { /* not a text field */ }
   }
-  // A failure is shown in the form's calm note, not only announced: on a phone there
-  // is otherwise nothing to see (Safari and Firefox refuse when their Paste bubble is
-  // dismissed, and an image on the clipboard reads as empty). The note sits below the
-  // Shorten button, off a small phone's screen, so it is scrolled to.
+  // A failure is shown under the field, calmly (the field itself is fine), not only
+  // announced: on a phone there is otherwise nothing to see (Safari and Firefox refuse
+  // when their Paste bubble is dismissed, and an image on the clipboard reads as empty).
   function pasteFailed(msg) {
+    var f = fields.url;
+    f.err.lastElementChild.textContent = msg;
+    f.err.classList.add('calm');
+    f.err.hidden = false;
     urlIn.focus();
-    showNote(msg, false, true);
-    bringIntoView(note);
+    bringIntoView(f.err);
+    announce(msg);
   }
   pasteBtn.addEventListener('click', function () {
     if (busy || keyOpen()) return;
@@ -556,18 +572,18 @@
     items.unshift(entry);
     var full = writeRecent(items);
     renderRecent(entry.code);
-    showResult(entry, true);
+    showResult(entry, true, full);
     urlIn.value = '';
     slugIn.value = '';
     syncPaste();
-    if (full) showNote(full, false, true);
-    // after the note's own announcement, so one message carries both
     announce('Short link ready: ' + bare(entry.short) + '.' + (full ? ' ' + full : ''));
   }
 
   /* ---- the result ---- */
   var current = null;
-  function showResult(e, fresh) {
+  // `listNote`: a word about the list (storage full), set inside the card before it is
+  // scrolled to, so it shows next to the Copy button instead of pushing it off screen
+  function showResult(e, fresh, listNote) {
     current = e;
     fillShort(shortA, e.short);
     shortA.setAttribute('href', e.short);
@@ -583,6 +599,8 @@
     copyBtn.classList.remove('is-done');
     shortA.classList.remove('is-copied');
     copyMsg.hidden = true;
+    ksNote.textContent = listNote || '';
+    ksNote.hidden = !listNote;
     result.hidden = false;
     result.classList.remove('enter');
     void result.offsetWidth;   // restart the entrance for a second link
@@ -910,6 +928,8 @@
       if (a) selectText(a);
       var m = copyFallbackMsg();
       setRowMsg(code, m, true);
+      var shown = li && li.querySelector('.r-msg');   // a row low on the screen puts it below the fold
+      if (shown) bringIntoView(shown);
       announce(m);
     });
   }
@@ -974,9 +994,13 @@
     }
     deleting[code] = true;
     if (li) { clearItemMsg(li); showConfirm(li, false); markDeleting(li); }
-    // from the key field, the row may be off screen: say something is happening
+    // Finished from the key box, the row may be off screen: the Shorten button under the
+    // key field shows it working (and holds off another submit), and it is announced.
+    var fromKey = !busy && pendingDelete === code && keyOpen();
+    if (fromKey) setBusy(true, 'Deleting…');
     announce('Deleting ' + bare((findEntry(code) || { short: shortFor('', code) }).short) + '…');
     request('DELETE', API + '?code=' + encodeURIComponent(code), k.key).then(function (r) {
+      if (fromKey) setBusy(false);
       delete deleting[code];
       var cur = rowFor(code);
       if (cur) { cur.classList.remove('is-busy'); cur.removeAttribute('aria-busy'); }
@@ -984,6 +1008,7 @@
       var err = typeof d.error === 'string' ? d.error : (r.status === 401 ? 'unauthorized' : '');
       if ((r.status >= 200 && r.status < 300 && d.ok === true) || err === 'not-found') {
         acceptKey(k);   // a not-found has passed the key check too
+        if (pendingDelete === code) closeKeyBox();   // the box was asking for this delete
         removeEntry(code, err === 'not-found');
         return;
       }

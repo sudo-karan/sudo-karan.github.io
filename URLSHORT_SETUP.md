@@ -60,7 +60,9 @@ rest of the site is unaffected.
 - **Recent links** on the page live on the device that made them. You can copy or delete from
   there. The page keeps the latest 200 and shows 20 until you press **Show all**. The browser's
   storage for karan98.in is shared with every page there. If it ever fills up, the oldest links
-  drop off the list first, and the page says how many. Links that drop off still work.
+  drop off the list first, and the page says how many. Links that drop off still work. If not
+  even the newest fits (or the browser keeps no site data), the list is kept for that tab only,
+  and the page says so.
 - **On a shared device**, use **Forget key** (under the Shorten button) when you're done. If you
   untick **Remember on this device**, the key is kept for that tab only.
 - **Pasting:** on a computer you can paste a link anywhere on the page; on a phone, use the

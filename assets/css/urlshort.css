@@ -251,6 +251,9 @@ button { cursor: pointer; }
 .err .i { width: 1rem; height: 1rem; margin-top: 0.12rem; }
 /* a long hyphenless ending ("karan98.in/s/portfolio2026resume") has no break of its own */
 .err > span { min-width: 0; overflow-wrap: anywhere; }
+/* the same slot for a word that isn't a fault in the field (the clipboard couldn't be read) */
+.err.calm { color: var(--ink-2); }
+.err.calm .i { color: var(--violet); }
 .invalid .input, .invalid .affix { border-color: var(--danger); }
 .invalid .input:focus, .invalid .affix:focus-within, .invalid .well:focus-within {
   border-color: var(--danger);
