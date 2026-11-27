@@ -483,7 +483,8 @@ button { cursor: pointer; }
 .r-confirm { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1rem; margin-top: 0.6rem; }
 .r-ask { flex: 1 1 14rem; font-size: 0.88rem; line-height: 1.45; color: var(--ink); }
 .r-btns { display: flex; gap: 0.5rem; margin-left: auto; }
-.r-msg { grid-column: 1 / -1; font-size: 0.82rem; font-weight: 500; color: var(--danger); }
+/* above the row link's overlay too, which reaches into it: a click on the message is not a click on the link */
+.r-msg { position: relative; z-index: 1; grid-column: 1 / -1; font-size: 0.82rem; font-weight: 500; color: var(--danger); }
 .r-msg.calm { color: var(--ink-2); }
 .r-item.is-busy { opacity: 0.75; }
 .r-more { display: flex; justify-content: center; padding-top: 0.5rem; }

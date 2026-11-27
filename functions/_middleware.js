@@ -57,9 +57,10 @@ function isOwnPath(pathname) {
   if (pathname.startsWith("/assets/")) return true;
   if (pathname.startsWith("/api/")) return true;
   if (pathname.startsWith("/.well-known/")) return true;
-  // The link shortener: its page (urlshort.html) and the short links themselves
-  // (functions/s/[code].js), which shouldn't wait on a trip to GitHub first.
-  if (pathname === "/urlshort" || pathname === "/urlshort/") return true;
+  // The link shortener: its page (urlshort.html; other spellings of its address were
+  // redirected before this) and the short links themselves (functions/s/[code].js),
+  // which shouldn't wait on a trip to GitHub first.
+  if (pathname === "/urlshort") return true;
   // Any case: Pages routes /S/<code> to the same Function, and a link printed
   // in capitals (KARAN98.IN/S/CV) arrives like that.
   if (/^\/s\//i.test(pathname)) return true;
@@ -71,9 +72,24 @@ function isOwnPath(pathname) {
   return false;
 }
 
+// The shortener's page has one address. _headers keeps other sites from framing it,
+// but its rules match the path exactly as sent, while the file is found after decoding
+// it: /%75rlshort, //urlshort or /x/..%2furlshort reach the same page without those
+// headers (or, proxied, as the mirror's copy). So every spelling of it redirects to
+// /urlshort itself.
+function isUrlshortAlias(url) {
+  if (url.pathname === "/urlshort") return false;
+  let p = url.pathname;
+  try { p = decodeURIComponent(p); } catch (e) { /* keep it as sent */ }
+  p = new URL(p.replace(/[\\/]+/g, "/"), url.origin).pathname;   // "\" is "/", and ".." is resolved
+  return /^\/urlshort(?:\/|\.html)?$/i.test(p);
+}
+
 export async function onRequest(context) {
   const { request, next } = context;
   const url = new URL(request.url);
+
+  if (isUrlshortAlias(url)) return Response.redirect(url.origin + "/urlshort" + url.search, 308);
 
   const moved = movedTo(url);
   if (moved) return Response.redirect(moved, 302);

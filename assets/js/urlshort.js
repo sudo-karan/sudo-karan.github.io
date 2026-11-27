@@ -37,8 +37,10 @@
     wrongHost: 'Links can only be made and deleted at karan98.in/urlshort.',
     clipEmpty: 'The clipboard is empty. Copy a link first, then tap Paste.',
     clipDenied: 'Couldn’t read the clipboard. Press and hold the field to paste instead.',
-    copyKeys: 'Couldn’t copy automatically. The link is selected, so copy it with Ctrl+C or ⌘C.',
+    copyKeys: 'Couldn’t copy automatically. Select the link and copy it with Ctrl+C or ⌘C.',
     copyTouch: 'Couldn’t copy automatically. Press and hold the link to copy it.',
+    listTabOnly: 'This browser’s storage is full, so this list is kept for this tab only.',
+    listGone: 'That link is already off the list.',
     offline: 'Couldn’t reach the shortener. Check your connection and try again.',
     server: 'Something went wrong on the server. Please try again.',
     deleteFailed: 'Couldn’t delete that link. Please try again.'
@@ -47,6 +49,14 @@
   function $(id) { return document.getElementById(id); }
   var form = $('shortenForm');
   if (!form) return;
+  // Never work inside a frame: the page around it could steer the owner's clicks into
+  // making or deleting links. _headers forbids framing /urlshort; this covers any
+  // address that slips past (an odd spelling of it, a copy served elsewhere).
+  if (window.top !== window.self) {
+    var framed = document.querySelectorAll('.tool, .recent');
+    for (var fi = 0; fi < framed.length; fi++) framed[fi].hidden = true;
+    return;
+  }
 
   var urlIn = $('url'), slugIn = $('slug'), keyIn = $('ownerKey'), rememberIn = $('rememberKey');
   var keyBox = $('keyBox'), shortenBtn = $('shorten'), btnLabel = shortenBtn.querySelector('.btn-label');
@@ -121,14 +131,25 @@
     }
     return out;
   }
+  // Saves the list, newest first. Returns '' or, when not all of it fits, what to tell
+  // the owner. Storage is shared with every page on karan98.in and can fill up: then as
+  // many of the newest are saved as fit (fewer always fit in less room), and if not even
+  // the newest fits, the list stays in this tab's memory.
+  function saveRecent(items) { return lsSet(RECENT_STORE, JSON.stringify(items)); }
   function writeRecent(items) {
     memRecent = items.slice(0, MAX_RECENT);
-    if (!lsOk) return;
-    // storage full: keep as many of the newest as fit, rather than none of the change
-    for (var n = memRecent.length; n > 0; n = Math.floor(n / 2)) {
-      if (lsSet(RECENT_STORE, JSON.stringify(memRecent.slice(0, n)))) return;
+    var n = memRecent.length;
+    if (!lsOk || saveRecent(memRecent)) return '';
+    var lo = 0, hi = n;   // the newest lo fit; the newest hi don't
+    while (hi - lo > 1) {
+      var mid = (lo + hi) >> 1;
+      if (saveRecent(memRecent.slice(0, mid))) lo = mid; else hi = mid;
     }
-    if (!lsSet(RECENT_STORE, '[]')) lsOk = false;
+    // each write that worked was bigger than the one before, so the last is the newest lo
+    if (!lo) { lsOk = false; return MSG.listTabOnly; }
+    var gone = n - lo;
+    return 'This browser’s storage is full, so the ' + (gone === 1 ? 'oldest link is' : gone + ' oldest links are') +
+      ' off the list. ' + (gone === 1 ? 'It still works.' : 'They still work.');
   }
 
   /* ---- small DOM helpers (no innerHTML anywhere) ---- */
@@ -258,6 +279,7 @@
     keyBox.classList.remove('opening');
     void keyBox.offsetWidth;   // restart the unfold
     keyBox.classList.add('opening');
+    syncPaste();
   }
   function closeKeyBox() {
     keyBox.hidden = true;
@@ -265,6 +287,7 @@
     keyIn.value = '';
     clearError('key');
     pendingDelete = '';
+    syncPaste();
   }
   function keyProblem(key) { return key.length > 1024 ? MSG.keyLong : MSG.keyChars; }
   // says where the key in use lives, so a key kept for this tab is never invisible
@@ -274,7 +297,11 @@
   }
   // a request with this key just succeeded: keep it, and remember it if asked
   function acceptKey(k) {
-    if (!k.typed) return;
+    if (!k.typed) {
+      // the key came from storage (another tab saved it, say): a box still asking is moot
+      if (keyOpen()) closeKeyBox();
+      return;
+    }
     memKey = k.key;
     if (rememberIn.checked) remembered = lsSet(KEY_STORE, k.key);
     else { lsDel(KEY_STORE); remembered = false; }
@@ -295,7 +322,6 @@
     lsDel(KEY_STORE);
     memKey = '';
     remembered = false;
-    pendingDelete = '';
     syncKeyUi();
     shortenBtn.focus();
     announce('Key forgotten. Making a link will ask for it again.');
@@ -352,7 +378,8 @@
     var scheme = /^([a-z][a-z0-9+.-]*):/i.exec(s);
     var hasScheme = !!scheme && scheme[1].indexOf('.') < 0;
     if (hasScheme && !/^https?$/i.test(scheme[1])) return MSG.scheme;
-    if (!hasScheme && /^[^\s/@]+@[^\s/@]+\.[^\s/@]+$/.test(s)) return MSG.email;
+    // name@host.tld and nothing more; example.com?to=me@mail.com is a link
+    if (!hasScheme && /^[^\s/?#@]+@[^\s/?#@]+\.[^\s/?#@]+$/.test(s)) return MSG.email;
     var u;
     try { u = new URL(hasScheme ? s : 'https://' + s); } catch (e) { return MSG.badUrl; }
     if (!u.hostname) return MSG.badUrl;
@@ -387,11 +414,23 @@
     } catch (e) { return ''; }
   }
 
-  // asked for the key to delete a link: Enter in the key field finishes that delete
+  // Asked for the key to delete a link: Enter in the key field (or Shorten with no link
+  // typed) finishes that delete. The request stays pending until the delete succeeds,
+  // so a second Enter while it is out does nothing and one after a failure retries.
   function finishDelete() {
     var code = pendingDelete;
+    if (findEntry(code)) { doDelete(code); return; }
+    // gone meanwhile (deleted in another tab, say): nothing is left to ask the key for
+    closeKeyBox();
+    recentTitle.focus();
+    announce(MSG.listGone);
+  }
+  // typing a link means making one: a delete still waiting for the key is dropped,
+  // with its prompt, so Enter in the key field can't finish it unseen
+  function dropDelete() {
+    if (!pendingDelete) return;
     pendingDelete = '';
-    if (findEntry(code)) doDelete(code);
+    if (fields.key.err.lastElementChild.textContent === MSG.keyToDelete) clearError('key');
   }
   keyIn.addEventListener('keydown', function (ev) {
     if (ev.key !== 'Enter' || ev.isComposing || !pendingDelete || busy) return;
@@ -402,7 +441,7 @@
   function submit() {
     if (busy) return;
     if (pendingDelete && !urlIn.value.trim()) { finishDelete(); return; }
-    pendingDelete = '';
+    dropDelete();
     hideNote();
     clearError('url');
     clearError('slug');
@@ -459,13 +498,14 @@
   form.addEventListener('submit', function (ev) { ev.preventDefault(); submit(); });
   // the notice (and this button) hides on resubmit, so keep focus somewhere stable
   retryBtn.addEventListener('click', function () { shortenBtn.focus(); submit(); });
-  urlIn.addEventListener('input', function () { clearError('url'); hideNote(); syncPaste(); pendingDelete = ''; });
+  urlIn.addEventListener('input', function () { clearError('url'); hideNote(); syncPaste(); dropDelete(); });
   slugIn.addEventListener('input', function () { clearError('slug'); });
   keyIn.addEventListener('input', function () { clearError('key'); });
 
   /* ---- pasting: a Paste button on touch screens, and paste anywhere on the page ---- */
   var canReadClip = !!(navigator.clipboard && typeof navigator.clipboard.readText === 'function');
-  function syncPaste() { pasteBtn.hidden = !(canReadClip && touch()) || !!urlIn.value; }
+  // hidden while the key box is open, when the clipboard most likely holds the key
+  function syncPaste() { pasteBtn.hidden = !(canReadClip && touch()) || !!urlIn.value || keyOpen(); }
   if (coarse && typeof coarse.addEventListener === 'function') coarse.addEventListener('change', syncPaste);
   function putUrl(text) {
     urlIn.value = text;
@@ -475,19 +515,24 @@
     urlIn.focus();
     try { urlIn.setSelectionRange(text.length, text.length); } catch (e) { /* not a text field */ }
   }
-  // a failure is shown in the form's calm note, not only announced: on a phone there
+  // A failure is shown in the form's calm note, not only announced: on a phone there
   // is otherwise nothing to see (Safari and Firefox refuse when their Paste bubble is
-  // dismissed, and an image on the clipboard reads as empty)
+  // dismissed, and an image on the clipboard reads as empty). The note sits below the
+  // Shorten button, off a small phone's screen, so it is scrolled to.
+  function pasteFailed(msg) {
+    urlIn.focus();
+    showNote(msg, false, true);
+    bringIntoView(note);
+  }
   pasteBtn.addEventListener('click', function () {
-    if (busy) return;
+    if (busy || keyOpen()) return;
     navigator.clipboard.readText().then(function (t) {
       t = String(t || '').trim();
-      if (!t) { urlIn.focus(); showNote(MSG.clipEmpty, false, true); return; }
+      if (!t) { pasteFailed(MSG.clipEmpty); return; }
       putUrl(t);
       announce('Pasted. Shorten it when you’re ready.');
     }, function () {
-      urlIn.focus();
-      showNote(MSG.clipDenied, false, true);
+      pasteFailed(MSG.clipDenied);
     });
   });
   function isTextField(t) {
@@ -509,13 +554,15 @@
   function created(entry) {
     var items = readRecent().filter(function (x) { return x.code !== entry.code; });
     items.unshift(entry);
-    writeRecent(items);
+    var full = writeRecent(items);
     renderRecent(entry.code);
     showResult(entry, true);
     urlIn.value = '';
     slugIn.value = '';
     syncPaste();
-    announce('Short link ready: ' + bare(entry.short) + '.');
+    if (full) showNote(full, false, true);
+    // after the note's own announcement, so one message carries both
+    announce('Short link ready: ' + bare(entry.short) + '.' + (full ? ' ' + full : ''));
   }
 
   /* ---- the result ---- */
@@ -698,8 +745,19 @@
       var m = copyFallbackMsg();
       copyMsg.textContent = m;
       copyMsg.hidden = false;
+      bringIntoView(copyMsg);   // the card was just scrolled to end at the fold
       announce(m);
     });
+  });
+  // The keepsake sets the link on two lines, so copying a selection of it would give
+  // "karan98.in/s/", a line break and the code. Copied whole, it gives the link itself.
+  document.addEventListener('copy', function (e) {
+    var sel = window.getSelection ? window.getSelection() : null;
+    if (!current || !e.clipboardData || !sel || sel.isCollapsed) return;
+    if (!shortA.contains(sel.anchorNode) || !shortA.contains(sel.focusNode)) return;
+    if (sel.toString().replace(/\s+/g, '') !== shortA.textContent.replace(/\s+/g, '')) return;
+    e.clipboardData.setData('text/plain', current.short);
+    e.preventDefault();
   });
 
   if (typeof navigator.share === 'function') shareBtn.hidden = false;
@@ -790,6 +848,11 @@
     list.hidden = !items.length;
     emptyBox.hidden = !!items.length;
     countEl.textContent = items.length ? items.length + (items.length === 1 ? ' link' : ' links') : '';
+    // the toggle goes once 20 or fewer are left (another tab deleted some): keep focus nearby
+    if (items.length <= SHOWN_RECENT && document.activeElement === moreBtn) {
+      var last = list.lastElementChild;
+      ((last && last.querySelector('.r-short')) || recentTitle).focus({ preventScroll: true });
+    }
     moreBox.hidden = items.length <= SHOWN_RECENT;
     moreBtn.textContent = showAll ? 'Show only the latest ' + SHOWN_RECENT : 'Show all ' + items.length + ' links';
     moreBtn.setAttribute('aria-expanded', showAll ? 'true' : 'false');
@@ -807,7 +870,12 @@
   moreBtn.addEventListener('click', function () {
     showAll = !showAll;
     renderRecent();
-    bringIntoView(moreBtn);
+    // Showing all puts this button after every row, so go to the first link it revealed
+    // instead (focus scrolls to it) and Tab walks on through the rest. Showing fewer
+    // keeps focus here, now just after row 20.
+    var first = showAll ? list.children[SHOWN_RECENT] : null;
+    var a = first && first.querySelector('.r-short');
+    if (a) a.focus(); else bringIntoView(moreBtn);
     announce(showAll ? 'Showing all ' + readRecent().length + ' links.' : 'Showing the latest ' + SHOWN_RECENT + ' links.');
   });
 
@@ -906,6 +974,8 @@
     }
     deleting[code] = true;
     if (li) { clearItemMsg(li); showConfirm(li, false); markDeleting(li); }
+    // from the key field, the row may be off screen: say something is happening
+    announce('Deleting ' + bare((findEntry(code) || { short: shortFor('', code) }).short) + '…');
     request('DELETE', API + '?code=' + encodeURIComponent(code), k.key).then(function (r) {
       delete deleting[code];
       var cur = rowFor(code);
@@ -938,6 +1008,10 @@
     if (li) li.classList.add('leaving');
     setTimeout(function () {
       renderRecent();
+      // Move focus only if it went with the row (or with the key box the delete was
+      // finished from): by now the owner may be typing a new link, or on its Copy button.
+      var a = document.activeElement;
+      if (a && a !== document.body && a.getClientRects().length) return;
       var target = nextCode ? list.querySelector('li[data-code="' + nextCode + '"] .r-short') : null;
       (target || recentTitle).focus();
     }, reduced() ? 0 : 220);

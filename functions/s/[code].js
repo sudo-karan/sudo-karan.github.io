@@ -70,9 +70,10 @@ const NOT_FOUND = page("Link not found", "404", "This short link doesn’t lead 
   "It may have been mistyped, or removed by its owner. Check the address you were sent.",
   `<a class="btn" href="/">Go to karan98.in</a>`);
 
-// href="" reloads this same address
+// href="" reloads this same address. (Nothing here can say whether the link exists:
+// the lookup itself failed.)
 const UNAVAILABLE = page("Try again shortly", "503", "This link can’t be opened just now.",
-  "Something went wrong on our side, and the link itself is fine. Try again in a minute.",
+  "Something went wrong on our side. Try again in a minute.",
   `<a class="btn" href="">Try again</a>`);
 
 function htmlPage(method, status, body, extra) {
