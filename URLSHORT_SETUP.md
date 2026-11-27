@@ -10,6 +10,7 @@ flagged. Every link made or deleted, and every visit to one, is logged to your G
 |---|---|
 | The page | `urlshort.html`, `assets/css/urlshort.css`, `assets/js/urlshort.js`, `assets/js/vendor/qrcode.js` (qrcode-generator 1.4.4, MIT) |
 | Make / delete | `functions/api/urlshort.js`: `POST` / `DELETE /api/urlshort`, with the owner key or an email pass |
+| What it won't make | `functions/_lib/urlshort-filter.js`: swear words, slurs and adult terms in endings and links, and adult sites (see "What it won't shorten") |
 | Following a link | `functions/s/[code].js`: `GET /s/<code>` answers 302 to the saved URL until the link expires, then a 410 "expired" page. Unknown codes get a 404 page |
 | The log | `functions/api/urlshort/log.js`: the Apps Script collects events from here |
 | Storage | a Cloudflare **KV namespace** bound as `URLSHORT` (the links), and a **D1 database** bound as `URLSHORT_DB` (the log), both in `wrangler.toml` |
@@ -158,7 +159,7 @@ million cells, so this keeps a flood of visits from ever filling it. Two full ta
   old passes keep working, new codes give passes the site refuses, and the Sheet stops filling
   (the events wait in D1).
 - **Custom endings** (`karan98.in/s/resume`): 3–40 letters, digits or hyphens. Case doesn't
-  matter.
+  matter. No swear words, slurs or adult terms: see "What it won't shorten".
 - **Random codes** are 6 characters with no `0`/`o` or `1`/`l`/`i`, so they survive being read
   aloud.
 - **Recent links** on the page live on the device that made them. You can copy or delete from
@@ -177,6 +178,40 @@ million cells, so this keeps a flood of visits from ever filling it. Two full ta
   working everywhere, even on older deployments that were built with it.
 - **If an answer gets lost** (a dropped connection, say), **Try again** is safe. It finds the
   link the first attempt made instead of making a second one, or calling your own ending taken.
+
+## What it won't shorten
+
+Nobody can make these, with the owner key or with a pass:
+- **Endings** with a swear word, a slur or an adult term in them: English, and Hindi and
+  Punjabi as they are typed in Latin letters, including spellings like `sh1t`, `fuuuck` and
+  `f-u-c-k`. The page says the ending isn't allowed. A random code that happens to spell one
+  is drawn again, so no `karan98.in/s/…` address shows one.
+- **Long links** with such a word in the host name or the path (the part before `?`).
+- **Adult sites**: addresses under `.xxx`, `.porn`, `.sex` or `.adult`, and any host that
+  Cloudflare's family resolver (1.1.1.3, "1.1.1.1 for Families") blocks, as it does adult
+  content and malware. The Function asks it once for each new link. If it can't be reached,
+  no link is made and the page asks you to try again in a minute.
+
+Every refusal is logged to the **Short links** tab as `Refused: blocked-slug`,
+`Refused: blocked-words` or `Refused: blocked-site`, with who tried and the link.
+
+No filter catches everything:
+- Short words that hide inside ordinary ones (`ass` in "class", `sex` in "Sussex", `cum` in
+  "document") count only on their own, between hyphens, dots or slashes: `big-ass` is
+  refused, `bigass` isn't. Longer words count anywhere.
+- Adult content on general sites (a post on Reddit or X, a file on Google Drive) gets
+  through: the resolver and the lists judge whole sites. So do a site too new to be listed,
+  a link through another shortener, and a bare IP address.
+- The lists are in `functions/_lib/urlshort-filter.js`. A real word refused by mistake goes
+  in `INNOCENT` there; a missed one in `ANYWHERE` or `WORDS`. Add a case to
+  `tests/urlshort-filter.test.mjs`, which lists words that must and mustn't pass, and run
+  `node --test "tests/*.test.mjs"`.
+- Links made before this filter aren't checked again. Delete any you don't want with the
+  owner key.
+
+**To check it after deploying:** make a link with the ending `test-fuck`. The page should say
+the ending isn't allowed. To check the resolver half, try a link to an adult site whose name
+says nothing about it; the page should say links to adult sites can't be shortened.
 
 ## Limits and behaviour
 - **KV free plan:** 100,000 link opens and 1,000 new or deleted links a day (resets at
@@ -223,6 +258,7 @@ million cells, so this keeps a flood of visits from ever filling it. Two full ta
   links are given the same ending at the same moment (from two tabs, say), both can report
   success, and the later one wins.
 - **Accepted links:** only `http(s)` links are saved. A bare address gets `https://`.
-  `user:password@` links and links to another `karan98.in/s/…` are refused.
+  `user:password@` links and links to another `karan98.in/s/…` are refused, and so is what
+  "What it won't shorten" lists.
 - **Links made before timers existed** never expire, and only the owner key can delete them.
 - **On the GitHub Pages mirror,** which has no Functions, `/urlshort` forwards to karan98.in.

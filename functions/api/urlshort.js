@@ -22,6 +22,14 @@
    the key it was built with, so without this check an old deployment would keep
    accepting a key the owner has since changed.
 
+   What it won't make (functions/_lib/urlshort-filter.js): an ending with a swear word,
+   a slur or an adult term in it (400 blocked-slug), a long link with one in its host
+   name or path (400 blocked-words), or a link to an adult site, by its top-level domain
+   or because Cloudflare's family resolver blocks the host (400 blocked-site). If that
+   resolver can't be asked, nothing is made (503 check-failed). A random code that
+   spells such a word is drawn again. Refusals are logged, with who tried and what.
+   This holds for the owner key too.
+
    Repeats are safe. The same ending for the same URL answers with the existing
    link instead of "taken". A random code is derived from `rid`, which the page
    keeps for a retry, so a create whose answer was lost finds its own link again.
@@ -58,6 +66,7 @@
    ========================================================================== */
 
 import { SITE_HOSTS, logEvent, cut, sha256, hmacSha256, b64url, sameSecret } from "../_lib/urlshort.js";
+import { endingRefused, codeRefused, linkRefused, familyBlocks } from "../_lib/urlshort-filter.js";
 
 const PREFIX = "s:";
 const ALPHABET = "23456789abcdefghjkmnpqrstuvwxyz"; // 31 characters
@@ -264,6 +273,18 @@ async function create(context, who) {
   const ttl = lifetime(body.ttl, !!who.owner);
   if (ttl < 0) return json({ ok: false, error: "bad-ttl" }, 400);
 
+  // No swear words, slurs or adult terms in the ending or the link, and no adult sites.
+  const refused = (slug && endingRefused(slug) ? "blocked-slug" : "") || linkRefused(u);
+  if (refused) return refuse(context, who, refused, slug, u.href);
+  let flagged;
+  try {
+    flagged = await familyBlocks(u.hostname);
+  } catch (e) {
+    console.error("urlshort: the family resolver couldn't be asked: " + (e && e.message ? e.message : e));
+    return json({ ok: false, error: "check-failed" }, 503);
+  }
+  if (flagged) return refuse(context, who, "blocked-site", slug, u.href);
+
   const kv = env.URLSHORT;
   const now = Date.now();
   const done = (code, expires, result) => {
@@ -288,6 +309,7 @@ async function create(context, who) {
     const rid = typeof body.rid === "string" && RID_RE.test(body.rid) ? body.rid : "";
     for (let i = 0; i < 5 && !code; i++) {
       const c = await makeCode(rid ? "rid:" + rid + ":" + i : "");
+      if (codeRefused(c)) continue; // it spells a word: the next one (a retry skips it too)
       const had = await kv.getWithMetadata(PREFIX + c);
       if (had.value === null) code = c;
       else if (rid && had.value === u.href && !isOver(had.metadata, now)) return done(c, endsOf(had.metadata), "repeat");
@@ -327,6 +349,13 @@ async function remove(context, who) {
   }
   logEvent(context, { kind: "delete", code: code, url: url, result: "deleted", actor: actorOf(who) });
   return json({ ok: true });
+}
+
+// A link the filter won't make. It is logged like a refused key, with who tried and the
+// ending and link they asked for, so the Sheet shows it.
+function refuse(context, who, error, code, url) {
+  logEvent(context, { kind: "denied", code: code, url: url, result: error, actor: actorOf(who) });
+  return json({ ok: false, error: error }, 400);
 }
 
 // Refused writes are logged too (with the ending a DELETE named), so that someone
