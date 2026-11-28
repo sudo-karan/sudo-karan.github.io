@@ -92,16 +92,18 @@ contact form) to be added.
      at once, copies anything already logged, and says so in the execution log; from then on
      the tabs fill every 5 minutes. If something isn't set up yet, it stops with a message that
      says what to fix (the tabs and the timer stay): fix it and run it again. Running it again
-     is always harmless. Runs before step 6's deployment
-     is live fail, and Google may email you about them; that's expected: HTTP 405 until the
-     pull request is merged, then 503 or 401 until both secrets are set and match.
+     is always harmless. Runs before step 6's deployment is live fail, and Google may email
+     you about them; that's expected: HTTP 405 until the pull request is merged, then 503 or
+     401 until both secrets are set and match.
    - Then **Deploy → Manage deployments → ✎ Edit → Version: New version → Deploy.** The web
-     app's URL stays the same.
+     app's URL stays the same. (Approving first means the sign-in never runs without the
+     permissions this code needs.)
    - **If the shortener is already live with an older page,** update the page first (merge its
      pull request and let it deploy), then paste this `Code.gs`: this code refuses a code request
      without the page's Cloudflare token, which an older page doesn't send, while the older code
-     simply ignores the token. Reload any `/urlshort` tab that was open from before. (Approving first means the sign-in never runs without the
-     permissions this code needs.)
+     simply ignores the token. Reload any `/urlshort` tab that was open from before. The contact
+     form's `RELAY_SECRET` goes in at the same time as this `Code.gs`, and only afterwards in
+     Cloudflare (`CONTACT_FORM_SETUP.md`, "Sealed relay").
 6. **Deploy.**
    - Production deploys from `main`: merging the pull request that has the bindings deploys
      karan98.in. (A push to another branch only builds a preview at a `*.pages.dev` address.)

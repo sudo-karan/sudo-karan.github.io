@@ -136,7 +136,9 @@ either: the Apps Script refuses a blob whose signature doesn't match. Without
 `RELAY_SECRET` on Cloudflare, the Function sends the older `relay`, which anyone can decode
 with `OBF_KEY` from `app.js`.
 
-**Set it up once, in this order:**
+**Set it up once, in this order** (merge the pull request that brings this `Code.gs` first: it
+is safe here, and the link shortener's bot check needs the new page live before this
+`Code.gs`, see `URLSHORT_SETUP.md`):
 1. Make the secret: `openssl rand -hex 32`. Keep it out of the repository and the page.
 2. **The Apps Script first.** Paste this `Code.gs`, add the Script Property `RELAY_SECRET`
    with the value, then **Deploy → Manage deployments → ✏️ Edit → Version: New version →
@@ -144,17 +146,18 @@ with `OBF_KEY` from `app.js`.
    relay, so nothing changes yet.
 3. **Then Cloudflare.** **Workers & Pages → sudo-karan-github-io → Settings → Variables and
    Secrets → Add**, type **Secret**, name `RELAY_SECRET`, the same value, for
-   **Production** (and **Preview**, if you test the form on previews). Then redeploy: merge
-   the pull request, or **Deployments → ⋯ → Retry deployment** if it is merged already. A
-   secret reaches the Function only with the next deployment. (From a terminal:
+   **Production** (and **Preview**, if you test the form on previews). Then redeploy:
+   **Deployments → ⋯ → Retry deployment** on the latest production deployment. A secret
+   reaches the Function only with the next deployment. (From a terminal:
    `npx wrangler pages secret put RELAY_SECRET --project-name sudo-karan-github-io`, then
    redeploy the same way.)
 4. **Check it.** On karan98.in, with DevTools → Network open, send yourself a message. The
    answer from `/api/contact` is `{"ok":true,"sealed":"…"}`, with no `relay`; the POST to
    `script.google.com` carries `{"sealed":"…"}`; the row and the email arrive as before.
 
-Merging the pull request before steps 2 and 3 is safe: until Cloudflare has
-`RELAY_SECRET`, the Function keeps sending the older relay, which every `Code.gs` takes.
+Merging the pull request before steps 2 and 3 is safe, and needed for the link shortener:
+until Cloudflare has `RELAY_SECRET`, the Function keeps sending the older relay, which every
+`Code.gs` takes.
 
 **Never set it on Cloudflare first.** An older `Code.gs`, or one without the property,
 can't open `{sealed}`, so the message is dropped, while the sender still sees "Message
