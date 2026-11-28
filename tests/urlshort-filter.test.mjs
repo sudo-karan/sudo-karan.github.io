@@ -69,7 +69,13 @@ test("long links with a word in the host or path are refused; adult top-level do
     "https://f-u-c-k.example.com/", "https://www.reddit.com/r/nsfw/", "https://example.com/%66uck", "https://example.com/a/sh1t",
     // one escape that doesn't decode doesn't hide the others, before or after them
     "https://example.com/%66%75%63%6B%", "https://www.reddit.com/r/%6Esfw/%FF", "https://example.com/%E0%A4%A/f%75ck",
-    "https://example.com/%zz/%66uck", "https://example.com/%70%6F%72%6E%FF"]) {
+    "https://example.com/%zz/%66uck", "https://example.com/%70%6F%72%6E%FF",
+    // an escape that isn't UTF-8 shows as typed, and its hex digits are letters too; as a gap,
+    // it leaves a word on its own; and the raw path counts as well
+    "https://example.com/%FAggot", "https://example.com/%BAstard", "https://example.com/%FFuck",
+    "https://example.com/%FA%67%67ot", "https://example.com/%FFshit", "https://example.com/x%FFrape",
+    "https://example.com/%DA%BAstard/%FF", "https://example.com/%B1tch", "https://example.com/kick-%A55",
+    "https://example.com/%5Fuck/%FF", "https://example.com/%FA%67%67%6F%74"]) {
     assert.equal(linkRefused(new URL(s)), "blocked-words", s);
   }
   for (const s of ["https://anything.xxx/", "https://site.porn/x", "https://x.adult", "https://y.sex/", "https://z.XXX./"]) {
@@ -81,6 +87,7 @@ test("long links with a word in the host or path are refused; adult top-level do
     "https://example.com/%E0%A4%A", // a broken escape is read as sent
     "https://example.com/caf%E9/class%2Fnotes", "https://example.com/%F0%9F%91%8D%E2%80%8D/glass", // Latin-1, an emoji
     "https://example.com/%2566uck", // decoded once, as a server does: "%66uck"
+    "https://example.com/%5Ex", "https://example.com/hello%20world", // a path that decodes is read decoded: "^x"
     "https://example.com/the%E2%80%8Bpen%E2%80%8Bis-mightier", // words apart, as with hyphens
     "https://example.com/?q=porn"]) { // the query isn't read: mostly ids and tracking
     assert.equal(linkRefused(new URL(s)), "", s);

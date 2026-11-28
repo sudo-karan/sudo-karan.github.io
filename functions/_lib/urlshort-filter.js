@@ -127,14 +127,39 @@ export function codeRefused(code) {
   return readings(String(code).toLowerCase()).some(r => ANYWHERE_RE.test(r) || WORD_ANYWHERE_RE.test(r));
 }
 
-// The path as a reader sees it. Each run of escapes is decoded once, on its own, so one
-// that doesn't decode (a stray "%", or "%FF") can't keep the others hidden: bytes that
-// aren't UTF-8 become U+FFFD, which reads as a gap. "%2566" stays "%66", as a server reads it.
-function readablePath(path) {
-  return path.replace(/(?:%[0-9a-f]{2})+/gi, run => {
+// A path that decodes is read decoded ("/%66uck" is "/fuck"; "%2566" is "%66", as a server
+// reads it). One with an escape that doesn't decode (a stray "%", "%zz", "%FF") is read three
+// ways, and a word in any of them counts, so the bad escape can't hide the others:
+//   - as typed, where an escape's hex digits are letters too ("/%FAggot" as it is);
+//   - each run of escapes decoded once, on its own, with bytes that aren't UTF-8 read as a
+//     gap (U+FFFD): "/%66%75%63%6B%" is "/fuck%";
+//   - as an address bar shows it: whole UTF-8 characters decoded, any other escape kept as
+//     typed: "/%FA%67%67ot" is "/%FAggot".
+const ESCAPES = /(?:%[0-9a-f]{2})+/gi;
+const UTF8_LENGTH = b => (b < 0x80 ? 1 : b >= 0xc2 && b <= 0xdf ? 2 : b >= 0xe0 && b <= 0xef ? 3 : b >= 0xf0 && b <= 0xf4 ? 4 : 0);
+
+function gapPath(path) {
+  return path.replace(ESCAPES, run => {
     try { return decodeURIComponent(run); } catch (e) {
       return new TextDecoder().decode(Uint8Array.from(run.slice(1).split("%"), h => parseInt(h, 16)));
     }
+  });
+}
+
+function shownPath(path) {
+  return path.replace(ESCAPES, run => {
+    try { return decodeURIComponent(run); } catch (e) { /* character by character */ }
+    const esc = run.match(/%[0-9a-f]{2}/gi);
+    let out = "";
+    for (let i = 0; i < esc.length;) {
+      const n = UTF8_LENGTH(parseInt(esc[i].slice(1), 16));
+      if (n) {
+        try { out += decodeURIComponent(esc.slice(i, i + n).join("")); i += n; continue; } catch (e) { /* as typed */ }
+      }
+      out += esc[i];
+      i += 1;
+    }
+    return out;
   });
 }
 
@@ -144,7 +169,10 @@ function readablePath(path) {
 export function linkRefused(u) {
   const host = u.hostname.toLowerCase().replace(/\.$/, "");
   if (ADULT_TLDS.indexOf(host.slice(host.lastIndexOf(".") + 1)) >= 0) return "blocked-site";
-  return rudeText(host) || rudeText(readablePath(u.pathname)) ? "blocked-words" : "";
+  const p = u.pathname;
+  let reads;
+  try { reads = [decodeURIComponent(p)]; } catch (e) { reads = [p, gapPath(p), shownPath(p)]; }
+  return rudeText(host) || reads.some(rudeText) ? "blocked-words" : "";
 }
 
 /* ---- Cloudflare's family resolver, over DNS-over-HTTPS (RFC 8484) ---------------- */

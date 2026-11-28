@@ -195,10 +195,20 @@ Script's **Executions** page each time.
 3. In Cloudflare, set `RELAY_SECRET` to the new value for **Production** (and **Preview**, if
    you set it there), then **Deployments → ⋯ → Retry deployment** on the latest production
    deployment, and wait until it has finished.
-4. Send yourself a test message. If its email has the note "Sealed with RELAY_SECRET_PREVIOUS"
-   under the heading, the live deployment still has the old value: retry the latest production
-   deployment again, and send another once it has finished. When a test message arrives
-   without that note, delete `RELAY_SECRET_PREVIOUS`.
+4. Send yourself a test message **on karan98.in** with DevTools → Network open. The answer
+   from `/api/contact` must be `{"ok":true,"sealed":"…"}`, and the POST to
+   `script.google.com` must carry `{"sealed":"…"}`. Only such a message can carry the note,
+   so only such a message tells you anything:
+   - If the POST carries `{"obf":…}` instead (the page's fallback), it proves nothing: send
+     another.
+   - If the `/api/contact` answer has `relay` in it, the production deployment has no
+     `RELAY_SECRET` at all: add it again and retry the latest production deployment.
+   - If the email has the note "Sealed with RELAY_SECRET_PREVIOUS" under the heading, the
+     live deployment still has the old value: retry the latest production deployment again,
+     and send another once it has finished.
+
+   Keep `RELAY_SECRET_PREVIOUS` until a sealed test message arrives without that note, then
+   delete it.
 
 Step 2 must come before step 3, or the messages sent in between are dropped. Whoever has
 an old secret can read the relays sealed with it that they captured, so rotating protects
