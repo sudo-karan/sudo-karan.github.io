@@ -124,6 +124,8 @@
                   </div>
                   <p class="err" id="emailErr" hidden><svg class="i" aria-hidden="true"><use href="#i-alert"/></svg><span></span></p>
                 </div>
+                <!-- Cloudflare's "Verify you are human" check (Turnstile), drawn here when the panel opens -->
+                <div class="human" id="tsWidget"></div>
                 <div class="field" id="codeField" hidden>
                   <p class="sent" id="codeSent"><svg class="i" aria-hidden="true"><use href="#i-mail"/></svg><span>If that address is on the list, a code is on its way.</span></p>
                   <label class="flabel" for="otp">6-digit code</label>

@@ -674,8 +674,11 @@
           .then(function (r) {
             if (!r.ok) return Promise.reject();
             return r.json().catch(function () { return {}; }).then(function (j) {
-              if (!j || !j.ok || !j.relay) return Promise.reject();
-              return fetch(S.contact.fallbackEndpoint, { method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ obf: j.relay }) }).then(function () { return true; });
+              // `sealed` only the Apps Script can open; `relay` is the Function's older,
+              // obfuscated answer, sent until it has its RELAY_SECRET.
+              var relay = !j || !j.ok ? null : j.sealed ? { sealed: j.sealed } : j.relay ? { obf: j.relay } : null;
+              if (!relay) return Promise.reject();
+              return fetch(S.contact.fallbackEndpoint, { method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(relay) }).then(function () { return true; });
             });
           });
       }

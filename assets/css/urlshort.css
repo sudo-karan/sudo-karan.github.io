@@ -312,6 +312,12 @@ button { cursor: pointer; }
 .keybox { display: grid; grid-template-rows: 1fr; margin-top: 1.35rem; }
 .keybox-in { min-height: 0; overflow: hidden; margin: -12px; padding: 12px; }  /* room for the focus ring, offset included */
 .keybox-in > .field, .keybox-in > .signin { padding-top: 1.35rem; border-top: 1px solid var(--line); }
+/* Cloudflare's check: room kept for its widget (300×65, or 150×140 compact) so nothing jumps.
+   The compact one is drawn when the box is narrower than 300px (tsSize in urlshort.js); the box
+   is as wide as the form card's content. */
+.human { margin-top: 0.9rem; min-height: 65px; }
+@container formcard (max-width: 299.49px) { .human { min-height: 140px; } }
+.human + .field { margin-top: 1.35rem; }   /* the code step keeps its distance from it */
 .kb-lead { margin-bottom: 1.1rem; font-size: 0.9rem; line-height: 1.5; color: var(--ink-2); text-wrap: pretty; }
 .kb-lead a {
   font-weight: 600; color: var(--violet); text-decoration: underline;

@@ -10,11 +10,13 @@ flagged. Every link made or deleted, and every visit to one, is logged to your G
 |---|---|
 | The page | `urlshort.html`, `assets/css/urlshort.css`, `assets/js/urlshort.js`, `assets/js/vendor/qrcode.js` (qrcode-generator 1.4.4, MIT) |
 | Make / delete | `functions/api/urlshort.js`: `POST` / `DELETE /api/urlshort`, with the owner key or an email pass |
+| What it won't make | `functions/_lib/urlshort-filter.js`: swear words, slurs and adult terms in endings and links, and adult sites (see "What it won't shorten") |
 | Following a link | `functions/s/[code].js`: `GET /s/<code>` answers 302 to the saved URL until the link expires, then a 410 "expired" page. Unknown codes get a 404 page |
 | The log | `functions/api/urlshort/log.js`: the Apps Script collects events from here |
 | Storage | a Cloudflare **KV namespace** bound as `URLSHORT` (the links), and a **D1 database** bound as `URLSHORT_DB` (the log), both in `wrangler.toml` |
 | Owner key | the Cloudflare **secret** `URLSHORT_KEY` |
 | Email codes | the contact form's Apps Script (`app=urlshort`): allow list `URLSHORT_WHITELIST`, and the secret `URLSHORT_GATE_SECRET`, set both there and in Cloudflare |
+| Bot check | Cloudflare Turnstile, the contact form's widget (site key in `assets/js/data.js` and `assets/js/urlshort.js`) and its `TURNSTILE_SECRET` Script Property, already set: a code is only sent once the check has passed |
 | The Sheet | the contact form's spreadsheet, in two tabs it adds: **Short links** and **Link visits** |
 | Sealing | the contact form's key pair: the page seals each new link's request with the public key (`SITE_KEY` in `assets/js/urlshort.js`, a copy of `contact.publicKey` in `data.js`), and the Function opens it with the contact form's Cloudflare secret `PRIVATE_KEY`, which is already set |
 
@@ -76,8 +78,16 @@ contact form) to be added.
    - Links can only be made or deleted at karan98.in itself: pull-request previews and older
      deployments at `*.pages.dev` addresses refuse to.
 5. **Set up the Apps Script** (the contact form's: open the Sheet → **Extensions → Apps Script**).
+   - **Updating a shortener that's already live?** Do step 6 first: merge the pull request and
+     wait until its production deployment is live. Then do this step, and reload any
+     `/urlshort` tab that was open from before. This code refuses a code request without the
+     page's Cloudflare token, which an older page doesn't send, while the older code simply
+     ignores the token.
    - Replace the code with [`functions/apps-script/Code.gs`](functions/apps-script/Code.gs).
    - **Project Settings → Script properties**, add:
+     - `RELAY_SECRET`: the contact form's, made with `openssl rand -hex 32`. It goes in here,
+       with this `Code.gs`, and in Cloudflare only once this version is deployed
+       (`CONTACT_FORM_SETUP.md`, "Sealed relay", steps 2 and 3).
      - `URLSHORT_GATE_SECRET`: the same value as in Cloudflare.
      - `URLSHORT_WHITELIST`: the addresses allowed to make links, comma- or newline-separated.
      - `URLSHORT_PASS_HOURS` (optional): how long a code keeps someone signed in on their
@@ -86,13 +96,17 @@ contact form) to be added.
        1,000–200,000. Default 100,000. See "What is logged".
    - In the editor, pick **installShortLinkSync** and press **Run** once. Approve the
      permissions it asks for: this code runs on a timer and connects to karan98.in to collect
-     the log, which the old code didn't. From then on the **Short links** and **Link visits**
-     tabs fill every 5 minutes. Running it again is harmless. Runs before step 6's deployment
-     is live fail, and Google may email you about them; that's expected: HTTP 405 until the
-     pull request is merged, then 503 or 401 until both secrets are set and match.
+     the log, which the old code didn't. It makes the **Short links** and **Link visits** tabs
+     at once, copies anything already logged, and says so in the execution log; from then on
+     the tabs fill every 5 minutes. If something isn't set up yet, it stops with a message that
+     says what to fix (the tabs and the timer stay): fix it and run it again. Running it again
+     is always harmless. Runs before step 6's deployment is live fail, and Google may email
+     you about them; that's expected: HTTP 405 until the pull request is merged, then 503 or
+     401 until both secrets are set and match.
    - Then **Deploy → Manage deployments → ✎ Edit → Version: New version → Deploy.** The web
      app's URL stays the same. (Approving first means the sign-in never runs without the
-     permissions this code needs.)
+     permissions this code needs.) Not **New deployment**: that makes a new URL, which the
+     site doesn't call, so the older code would stay live.
 6. **Deploy.**
    - Production deploys from `main`: merging the pull request that has the bindings deploys
      karan98.in. (A push to another branch only builds a preview at a `*.pages.dev` address.)
@@ -158,7 +172,7 @@ million cells, so this keeps a flood of visits from ever filling it. Two full ta
   old passes keep working, new codes give passes the site refuses, and the Sheet stops filling
   (the events wait in D1).
 - **Custom endings** (`karan98.in/s/resume`): 3–40 letters, digits or hyphens. Case doesn't
-  matter.
+  matter. No swear words, slurs or adult terms: see "What it won't shorten".
 - **Random codes** are 6 characters with no `0`/`o` or `1`/`l`/`i`, so they survive being read
   aloud.
 - **Recent links** on the page live on the device that made them. You can copy or delete from
@@ -178,6 +192,40 @@ million cells, so this keeps a flood of visits from ever filling it. Two full ta
 - **If an answer gets lost** (a dropped connection, say), **Try again** is safe. It finds the
   link the first attempt made instead of making a second one, or calling your own ending taken.
 
+## What it won't shorten
+
+Nobody can make these, with the owner key or with a pass:
+- **Endings** with a swear word, a slur or an adult term in them: English, and Hindi and
+  Punjabi as they are typed in Latin letters, including spellings like `sh1t`, `fuuuck` and
+  `f-u-c-k`. The page says the ending isn't allowed. A random code that happens to spell one
+  is drawn again, so no `karan98.in/s/…` address shows one.
+- **Long links** with such a word in the host name or the path (the part before `?`).
+- **Adult sites**: addresses under `.xxx`, `.porn`, `.sex` or `.adult`, and any host that
+  Cloudflare's family resolver (1.1.1.3, "1.1.1.1 for Families") blocks, as it does adult
+  content and malware. The Function asks it once for each new link. If it can't be reached,
+  no link is made and the page asks you to try again in a minute.
+
+Every refusal is logged to the **Short links** tab as `Refused: blocked-slug`,
+`Refused: blocked-words` or `Refused: blocked-site`, with who tried and the link.
+
+No filter catches everything:
+- Short words that hide inside ordinary ones (`ass` in "class", `sex` in "Sussex", `cum` in
+  "document") count only on their own, between hyphens, dots or slashes: `big-ass` is
+  refused, `bigass` isn't. Longer words count anywhere.
+- Adult content on general sites (a post on Reddit or X, a file on Google Drive) gets
+  through: the resolver and the lists judge whole sites. So do a site too new to be listed,
+  a link through another shortener, and a bare IP address.
+- The lists are in `functions/_lib/urlshort-filter.js`. A real word refused by mistake goes
+  in `INNOCENT` there; a missed one in `ANYWHERE` or `WORDS`. Add a case to
+  `tests/urlshort-filter.test.mjs`, which lists words that must and mustn't pass, and run
+  `node --test "tests/*.test.mjs"`.
+- Links made before this filter aren't checked again. Delete any you don't want with the
+  owner key.
+
+**To check it after deploying:** make a link with the ending `test-fuck`. The page should say
+the ending isn't allowed. To check the resolver half, try a link to an adult site whose name
+says nothing about it; the page should say links to adult sites can't be shortened.
+
 ## Limits and behaviour
 - **KV free plan:** 100,000 link opens and 1,000 new or deleted links a day (resets at
   00:00 UTC).
@@ -188,14 +236,29 @@ million cells, so this keeps a flood of visits from ever filling it. Two full ta
 - **Email codes** come from the Apps Script's Gmail and share the contact form's daily cap
   (`OTP_DAILY_CAP`, 85 by default). Each address can ask for 3 codes an hour. Answers take about
   4 seconds on purpose, and they never say whether an address is on the list.
+- **The bot check.** When the email sign-in opens, the page shows Cloudflare's "Verify you are
+  human" check, the same Turnstile widget as the contact form (it usually passes by itself).
+  "Send code" carries its token, which the Apps Script checks with Cloudflare before anything
+  else, so a script can't make the shortener's sign-in send codes. A failed check uses none of
+  the limits above, and its answer is the same for every address. (The daily cap is shared
+  with the contact form's and the PhD explorer's codes, which have checks of their own or none,
+  so those can still use it up.) Cloudflare's script is fetched only when
+  the email sign-in opens, never for the owner key. The widget's hostnames in Cloudflare (Turnstile
+  → the widget) must include `karan98.in`, as they already do for the contact form. If
+  `TURNSTILE_SECRET` were removed from the Apps Script, codes would go out without the check,
+  as the contact form's messages would.
 - **The Sheet** fills every 5 minutes, so the newest events can take that long to appear. If it
   stops filling, the `syncShortLinks` runs show as **Failed** on the Apps Script's
-  **Executions** page (Google usually emails you about failed runs too), and the error says why:
+  **Executions** page (Google usually emails you about failed runs too), and the error says
+  what to do. To see it at once, pick **syncShortLinks** in the editor and press **Run**. In
+  short:
   - HTTP 403 with a Cloudflare challenge page: **Bot Fight Mode** (Security → Bots) is stopping
-    Google's call. Turn it off, or add a rule that skips it for `/api/urlshort/log`.
+    Google's call. Turn it off: it can't be skipped for a single path. (On Pro and above, Super
+    Bot Fight Mode can be, with a WAF custom rule that skips it for `/api/urlshort/log`.)
   - HTTP 401: the two `URLSHORT_GATE_SECRET` values (Cloudflare and the Apps Script) differ.
   - HTTP 503 `not-set-up`: the D1 database isn't bound yet, or Cloudflare has no
-    `URLSHORT_GATE_SECRET`.
+    `URLSHORT_GATE_SECRET` (add it, then retry the latest deployment).
+  - HTTP 405 or 404: karan98.in doesn't have the shortener yet (not merged, or still deploying).
 
   Meanwhile the events wait in D1, and the next good runs catch up, up to 2,500 events each.
 - **If you ever delete and recreate the D1 database,** also delete the Script Property
@@ -210,6 +273,15 @@ million cells, so this keeps a flood of visits from ever filling it. Two full ta
 - **If every new link gets "Something went wrong on the server"** right after the site's key
   pair was changed, `PRIVATE_KEY` and the page's `SITE_KEY` don't match yet: retry the latest
   deployment (see the rotation steps in [`CONTACT_FORM_SETUP.md`](CONTACT_FORM_SETUP.md)).
+- **If "Send code" says the Cloudflare check didn't pass** for everyone, the Apps Script's
+  `TURNSTILE_SECRET` isn't the secret of the widget with site key `0x4AAAAAADsvK3etT1iNEaDP`
+  (Cloudflare → Turnstile). **If it says the check couldn't load,** something on that device
+  (an ad blocker, a network filter) blocks `challenges.cloudflare.com`; the owner key still works.
+  **If it says the check failed on this device (error …),** Cloudflare's widget itself gave up:
+  often a device clock that's far off, or a browser it doesn't support. If everyone gets it, the
+  widget's hostnames in Cloudflare (Turnstile → the widget) may not include `karan98.in`.
+  **If it says "Couldn't send a code just now"** for everyone right after the Apps Script was
+  updated, the page in use is older than this `Code.gs`: deploy the page, and reload.
 - **If every code is accepted but making a link then asks for a new code,** the two
   `URLSHORT_GATE_SECRET` values (Cloudflare and the Apps Script) aren't the same. Copy one into
   the other, and retry the latest deployment if you changed Cloudflare's.
@@ -223,6 +295,7 @@ million cells, so this keeps a flood of visits from ever filling it. Two full ta
   links are given the same ending at the same moment (from two tabs, say), both can report
   success, and the later one wins.
 - **Accepted links:** only `http(s)` links are saved. A bare address gets `https://`.
-  `user:password@` links and links to another `karan98.in/s/…` are refused.
+  `user:password@` links and links to another `karan98.in/s/…` are refused, and so is what
+  "What it won't shorten" lists.
 - **Links made before timers existed** never expire, and only the owner key can delete them.
 - **On the GitHub Pages mirror,** which has no Functions, `/urlshort` forwards to karan98.in.

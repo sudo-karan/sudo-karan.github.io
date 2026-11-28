@@ -14,6 +14,13 @@
   // load either. A new link's request is sealed for it (see seal), as the contact form's
   // messages are; its private half is the Cloudflare secret PRIVATE_KEY. Change both together.
   var SITE_KEY = 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1JMTLtINAoNvbqmYU1L+5x1rkx9hhvmhlsbWeTEmoZtaAZHKCSWih2fBnqY5ug/Z5DYIM2bb5/jJ7/cFp42fuAtgLDYZ/N8cNcRZJ61Lm22wciD3li9U1fpGfKGzoq2NrjvPTWnYDPVErfR65/ROIBBq2AQU60JRqLyed3qWabKW7MlXHJ5KD8ea1aobhWYB6qSe9ETCHcMVscQCR3glQUlvAhN5Y9YGQzfhJ4ndOnA3KSnuG+Otptx6p5FY+ebvVZkhOyTs9u5wDy1fwc30aDgK/XCCidI76enj9nm+rXx47RcPMCo2fnc3IhpcOIqzjMMs5Uc1gmoA8nmYhSKk5QIDAQAB';
+  // The Cloudflare check that a person, not a script, is asking for a sign-in code: the contact
+  // form's Turnstile widget (contact.turnstileSiteKey in data.js), whose token the Apps Script
+  // checks with TURNSTILE_SECRET. Cloudflare's script is fetched only once the email sign-in shows.
+  var TS_SITE_KEY = '0x4AAAAAADsvK3etT1iNEaDP';
+  var TS_SCRIPT = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+  var TS_ACTION = 'urlshort-code';   // the Apps Script takes only tokens made for this
+  var TS_WAIT_MS = 8000;             // how long "Send code" waits for a check that's still going
   var KEY_STORE = 'urlshort:key';
   var PASS_STORE = 'urlshort:pass';
   var RECENT_STORE = 'urlshort:recent';
@@ -40,6 +47,10 @@
     email: 'That looks like an email address. Paste a web link instead.',
     badSlug: 'Use 3–40 letters, numbers or hyphens, with no hyphen at either end.',
     slugTaken: 'That ending is already taken. Try another, or leave it blank.',
+    blockedSlug: 'That ending isn’t allowed: endings can’t have swear words, slurs or adult terms in them. Try another, or leave it blank.',
+    blockedWords: 'That link can’t be shortened here: its address has a swear word, a slur or an adult term in it.',
+    blockedSite: 'Links to adult sites, or to sites flagged as harmful, can’t be shortened here.',
+    checkFailed: 'Couldn’t check that link just now. Please try again in a minute.',
     needKey: 'Enter the owner key to continue.',
     badKey: 'That key didn’t work. Check it and try again.',
     staleKey: 'The remembered key didn’t work. Enter the current one.',
@@ -57,6 +68,10 @@
     tooManyTries: 'Too many wrong tries for that code. Send a new code.',
     signInBusy: 'The sign-in service is busy. Try again in a moment.',
     signInOff: 'Signing in by email isn’t switched on yet.',
+    needHuman: 'Wait for the Cloudflare check to finish (tick it if it asks), then try again.',
+    humanFailed: 'The Cloudflare check couldn’t load. Check your connection and try again.',
+    humanAgain: 'The Cloudflare check didn’t pass. Try it again, then send the code.',
+    humanBroken: 'The Cloudflare check failed on this device (error {code}). Reload the page and try again. If it keeps failing, tell me through the contact form.',
     quota: 'No more sign-in codes can be sent today. Please try again tomorrow.',
     signInOffline: 'Couldn’t reach the sign-in service. Check your connection and try again.',
     sendFailed: 'Couldn’t send a code just now. Please try again.',
@@ -103,6 +118,7 @@
   var keyState = $('keyState'), keyStateText = $('keyStateText'), keyStateIcon = $('keyStateIcon'), signOutBtn = $('signOut');
   var emailMode = $('emailMode'), emailIn = $('email'), sendBtn = $('sendCode'), codeField = $('codeField');
   var otpIn = $('otp'), verifyBtn = $('verify'), resendBtn = $('resend'), modeBtn = $('modeSwitch'), keyField = $('keyField');
+  var tsBox = $('tsWidget');
   var ttlChips = $('ttlChips'), ttlCustom = $('ttlCustom'), ttlNum = $('ttlNum'), ttlUnit = $('ttlUnit'), ttlHint = $('ttlHint');
   var neverChip = $('ttlNever'), ttlInputs = ttlChips.querySelectorAll('input[name="ttl"]');
   var neverIn = neverChip.querySelector('input'), defaultIn = ttlChips.querySelector('input[value="' + TTL_DEFAULT + '"]');
@@ -452,6 +468,75 @@
     keyField.hidden = m !== 'key';
     modeBtn.textContent = m === 'email' ? 'Use the owner key instead' : 'Use an email code instead';
     syncNever();
+    syncHuman();
+  }
+
+  /* ---- the Cloudflare check before a code is sent (as the contact form's) ---- */
+  var ts = { state: 'idle', id: null, size: '', err: '' };   // state: idle → loading → ready, or failed
+  // Loaded the first time the email sign-in shows, and never for the owner key alone.
+  function syncHuman() { if (keyOpen() && mode === 'email') tsLoad(); }
+  function tsLoad() {
+    if (ts.state === 'ready') { tsRender(); return; }
+    if (ts.state === 'loading') return;
+    ts.state = 'loading';
+    var s = document.createElement('script');
+    s.src = TS_SCRIPT;
+    s.async = true;
+    s.onload = function () {
+      ts.state = window.turnstile && typeof window.turnstile.render === 'function' ? 'ready' : 'failed';
+      tsRender();
+    };
+    s.onerror = function () { ts.state = 'failed'; if (s.parentNode) s.parentNode.removeChild(s); };
+    document.head.appendChild(s);
+  }
+  // Drawn while it shows, so its width is known: narrower than 300px, it's the compact one
+  // (urlshort.css keeps room for whichever it will be, so nothing jumps when it arrives).
+  function tsSize() { return tsBox.clientWidth > 0 && tsBox.clientWidth < 300 ? 'compact' : 'normal'; }
+  function tsRender() {
+    if (ts.state !== 'ready' || ts.id !== null || !tsBox || !keyOpen() || emailMode.hidden) return;
+    try {
+      var size = tsSize();
+      var id = window.turnstile.render(tsBox, {
+        sitekey: TS_SITE_KEY, action: TS_ACTION, theme: 'auto', 'response-field': false, size: size,
+        // an error it can't get past (a clock far off, an unsupported browser) is told as such
+        callback: function () { ts.err = ''; },
+        'error-callback': function (code) { ts.err = String(code || 'error').slice(0, 20); },
+        'unsupported-callback': function () { ts.err = 'unsupported'; }
+      });
+      ts.id = id == null ? null : id;
+      ts.size = size;
+      if (ts.id === null) ts.state = 'failed';
+    } catch (e) { ts.state = 'failed'; }
+  }
+  // a phone turned on its side and back: a widget drawn for another width is drawn again to fit
+  if (tsBox && typeof window.ResizeObserver === 'function') {
+    new window.ResizeObserver(function () {
+      if (ts.id === null || signing || !tsBox.clientWidth || tsSize() === ts.size) return;
+      try { window.turnstile.remove(ts.id); } catch (e) { /* drawn afresh below */ }
+      ts.id = null;
+      ts.err = '';
+      tsRender();
+    }).observe(tsBox);
+  }
+  function tsToken() {
+    if (ts.id === null) return '';
+    try { return window.turnstile.getResponse(ts.id) || ''; } catch (e) { return ''; }
+  }
+  // Resolves with a token as soon as there is one, or '' once the check has failed or ms is up.
+  function tsWait(ms) {
+    return new Promise(function (resolve) {
+      var until = Date.now() + ms;
+      (function poll() {
+        var t = tsToken();
+        if (t || ts.state === 'failed' || Date.now() >= until) { resolve(t); return; }
+        setTimeout(poll, 150);
+      })();
+    });
+  }
+  // a token is good for one request, so the next one waits for a fresh check
+  function tsReset() {
+    if (ts.id === null) return;
+    try { window.turnstile.reset(ts.id); } catch (e) { /* the next send asks for the check again */ }
   }
   function openKeyBox(m) {
     if (!keyOpen()) {
@@ -469,7 +554,7 @@
         if (f && keyBox.contains(f)) bringIntoView(f);
       });
     }
-    if (m && m !== mode) setMode(m); else syncNever();
+    if (m && m !== mode) setMode(m); else { syncNever(); syncHuman(); }
     syncPaste();
   }
   function closeKeyBox() {
@@ -671,21 +756,41 @@
     clearError('otp');
     if (!email) { setError('email', MSG.needEmail); return; }
     if (email.length > 254 || !EMAIL_RE.test(email)) { setError('email', MSG.badEmail); return; }
+    var human = tsToken();
+    if (!human) {
+      // The check usually passes by itself within a few seconds of the panel opening, so a quick
+      // "Send code" (or an address filled in by the browser) waits for it, the button showing
+      // it's at work, and then sends. If it needs a tick that doesn't come, or can't load, say so.
+      if (ts.state === 'failed') ts.state = 'idle';   // try loading it again
+      syncHuman();
+      setSigning(again ? resendBtn : sendBtn);
+      announce('Waiting for the Cloudflare check…');
+      tsWait(TS_WAIT_MS).then(function (t) {
+        setSigning(null);
+        if (!keyOpen() || mode !== 'email') return;   // moved on meanwhile
+        if (t) sendCode(again);
+        else setError(where, ts.state === 'failed' ? MSG.humanFailed : ts.err ? MSG.humanBroken.replace('{code}', ts.err) : MSG.needHuman, 'say');
+      });
+      return;
+    }
     setSigning(again ? resendBtn : sendBtn);
     announce('Sending a code…');
     // send-code, not send-otp: a script from before the shortener doesn't know it, so it
     // sends nothing (see urlshortAnswer in Code.gs), and its answer has no app: 'urlshort'
-    jsonp({ app: 'urlshort', action: 'send-code', email: email }).then(function (r) {
+    jsonp({ app: 'urlshort', action: 'send-code', email: email, ts: human }).then(function (r) {
       var to = stillHere() ? undefined : null;
+      tsReset();
       setSigning(null);
       if (!keyOpen()) return;   // done another way meanwhile (the owner key, say): nothing to say
       if (r.app !== 'urlshort') { setError(where, MSG.signInOff, 'say', to); return; }
       if (r.ok === true) { codeSent(email); return; }
       if (r.reason === 'bad-email') { resetCode(); setError('email', MSG.badEmail, '', to); return; }
+      if (r.reason === 'bot-check') { setError(where, MSG.humanAgain, 'say', to); return; }
       setError(where, r.reason === 'rate-limit' ? tooManyCodes(r.retryMins) : r.reason === 'quota' ? MSG.quota :
         r.reason === 'not-set-up' ? MSG.signInOff : MSG.sendFailed, 'say', to);
     }, function (err) {
       var to = stillHere() ? undefined : null;
+      tsReset();
       setSigning(null);
       if (keyOpen()) setError(where, codeTrouble(err, true), 'say', to);
     });
@@ -1078,6 +1183,10 @@
       else if (err === 'self-link') setError('url', MSG.selfLink);
       else if (err === 'bad-slug') setError('slug', slugProblem(slug) || MSG.badSlug);
       else if (err === 'slug-taken') setError('slug', slug ? 'karan98.in/s/' + slug + ' is already taken. Try another, or leave it blank.' : MSG.slugTaken);
+      else if (err === 'blocked-slug') setError('slug', MSG.blockedSlug);
+      else if (err === 'blocked-words') setError('url', MSG.blockedWords);
+      else if (err === 'blocked-site') setError('url', MSG.blockedSite);
+      else if (err === 'check-failed') showNote(MSG.checkFailed, true);
       else if (err === 'bad-ttl') ttlProblem(MSG.badTtl);
       else if (err === 'unauthorized' || err === 'pass-expired') {
         pendingCreate = true;   // made once signed in again

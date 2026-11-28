@@ -1,9 +1,13 @@
 /* ============================================================================
    Google Apps Script — contact form handler for karan98.in.
 
-   doPost accepts TWO request shapes so the form works on Cloudflare and GitHub Pages:
+   doPost accepts THREE request shapes so the form works on Cloudflare and GitHub Pages:
      1. { secret, fields, meta }  — forwarded by the Cloudflare Function (shared-secret).
-     2. { obf }  — obfuscated blob posted from the browser (Turnstile verified here).
+     2. { obf }  — obfuscated blob posted from the browser (Turnstile verified here): the
+        GitHub Pages fallback, and the Function's relay until it has RELAY_SECRET.
+     3. { sealed }  — the Function's relay, carried by the browser: encrypted and signed
+        with keys from RELAY_SECRET, which the page never sees (see openSealed). Turnstile
+        is verified here too. One that doesn't open is refused, and the owner is told.
 
    doGet is a JSONP endpoint for the optional email-OTP verification:
      ?action=send-otp&email=…&callback=…    → emails a 6-digit code
@@ -37,7 +41,9 @@
 
    With &app=urlshort the same protocol as the PhD explorer's serves the link shortener
    (karan98.in/urlshort, in this repository), under the action names send-code and
-   check-code, and every answer carries app: 'urlshort' (see urlshortAnswer): codes go only
+   check-code, and every answer carries app: 'urlshort' (see urlshortAnswer). send-code also
+   takes ts, the token of the page's Cloudflare Turnstile check, checked with TURNSTILE_SECRET
+   (else { ok: false, reason: 'bot-check' }, the same for every address). Codes go only
    to URLSHORT_WHITELIST, answers don't say who is listed, and a right code gets
    { verified: true, token, exp }: the token over { email, exp, aud: 'urlshort' }, signed
    with URLSHORT_GATE_SECRET, good for URLSHORT_PASS_HOURS (default 24). Nobody gets one
@@ -50,10 +56,14 @@
    email table.
 
    Script Properties (Project Settings → Script properties):
-     TURNSTILE_SECRET  - Cloudflare Turnstile secret key (for the { obf } path)
+     TURNSTILE_SECRET  - Cloudflare Turnstile secret key (for the { obf } path, and the link
+                         shortener's code requests)
      RECIPIENT         - where to email submissions
      SHARED_SECRET     - must equal the Cloudflare Function's SHARED_SECRET env
      OBFUSCATION_KEY   - must equal OBF_KEY in the website's app.js (defaults below)
+     RELAY_SECRET      - must equal the Cloudflare Function's secret RELAY_SECRET; opens
+                         { sealed }. Set it here first (CONTACT_FORM_SETUP.md, "Sealed relay")
+     RELAY_SECRET_PREVIOUS - (only while rotating RELAY_SECRET) the old value, still accepted
      OTP_DAILY_CAP     - (optional) max verification codes/day (default 85); the rest
                          of Gmail's ~100/day stays reserved for message notifications
      SHEET_ID          - (optional) spreadsheet id; otherwise the bound sheet
@@ -69,7 +79,9 @@
                             1,000–200,000 (default 100,000)
 
    Deploy: Web app · Execute as: Me · Who has access: Anyone.
-   After pasting: run doPost once → Allow all permissions → Deploy → New version.
+   After pasting: run doPost once → Allow all permissions → Deploy → Manage deployments →
+   ✏️ Edit → Version: New version → Deploy. (Not New deployment: that makes a new /exec URL,
+   which the site doesn't call, so the old code would stay live.)
    NOTE: this version adds an "Email verified" column — if the Sheet holds an older
    header, clear the Sheet once (select all → delete) so the new header writes fresh.
    ========================================================================== */
@@ -107,13 +119,25 @@ function doPost(e) {
     var sheetId = props.getProperty('SHEET_ID') || '';
 
     var body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
-    var f, m;
+    var f, m, oldSeal = false;
 
     if (body.secret != null) {
       if (!sharedSecret || body.secret !== sharedSecret) return out({ ok: false, error: 'unauthorized' });
       f = body.fields || {}; m = body.meta || {};
-    } else if (body.obf) {
-      var inner = JSON.parse(deob(body.obf, obfKey));
+    } else if (body.sealed != null || body.obf) {
+      // Both carry the same { token, fields, meta }; only the wrapping differs.
+      var inner;
+      if (body.sealed != null) {
+        var secrets = relaySecrets(props);
+        inner = openSealed(body.sealed, secrets);
+        if (!inner) { relayAlert(recipient, props); return out({ ok: false, error: 'bad-seal' }); }
+        // While rotating: sealed with the old value only? Then the live Cloudflare deployment
+        // doesn't have the new one yet, and RELAY_SECRET_PREVIOUS has to stay. The email says so.
+        oldSeal = secrets.length > 1 && !openSealed(body.sealed, secrets.slice(0, 1));
+        if (oldSeal) console.warn('doPost: a relay sealed with RELAY_SECRET_PREVIOUS: the live Cloudflare deployment still has the old RELAY_SECRET');
+      } else {
+        inner = JSON.parse(deob(body.obf, obfKey));
+      }
       f = inner.fields || {}; m = inner.meta || {};
       if (turnstileSecret) {
         var resp = UrlFetchApp.fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
@@ -204,6 +228,10 @@ function doPost(e) {
     }
 
     var html = '<h2 style="font-family:Arial,sans-serif;color:#4c1d95">New message from karan98.in</h2>' +
+      (oldSeal ? '<p style="font-family:Arial,sans-serif;font-size:14px;color:#b45309"><b>Sealed with ' +
+        'RELAY_SECRET_PREVIOUS.</b> The live Cloudflare deployment still has the old RELAY_SECRET: ' +
+        'retry the latest production deployment, and keep RELAY_SECRET_PREVIOUS until a message ' +
+        'arrives without this note.</p>' : '') +
       '<table cellpadding="6" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px">';
     FIELDS.forEach(function (fld) {
       var v = rec[fld[1]];
@@ -240,7 +268,7 @@ function doGet(e) {
   var action = p.action;
   var result;
   if (p.app === PHD_APP) return respond(phdAnswer(action, p.email, p.code), p.callback);
-  if (p.app === URLSHORT_APP) return respond(urlshortAnswer(action, p.email, p.code), p.callback);
+  if (p.app === URLSHORT_APP) return respond(urlshortAnswer(action, p.email, p.code, p.ts), p.callback);
   if (action === 'send-otp') result = sendOtp(p.email, p.flow, p.app);
   else if (action === 'verify-otp') result = verifyOtp(p.email, p.code, p.app);
   else result = { ok: true, note: 'POST only' };
@@ -559,8 +587,8 @@ var URLSHORT_NS = 'urlshort_'; // cache-key prefix: the shortener's codes and ho
 // know, so it sends nothing and answers { ok: true, note: 'POST only' }. Every answer from
 // here carries app: 'urlshort' (listed or not, so it says nothing about the list), which is
 // how the page tells the two apart and says signing in isn't switched on yet.
-function urlshortAnswer(action, email, code) {
-  var a = action === 'send-code' ? urlshortSend(email)
+function urlshortAnswer(action, email, code, ts) {
+  var a = action === 'send-code' ? urlshortSend(email, ts)
     : action === 'check-code' ? urlshortVerify(email, code)
     : { ok: false, reason: 'bad-request' };
   a.app = URLSHORT_APP;
@@ -608,18 +636,45 @@ function urlshortToken(email, secret, exp) {
   return payload + '.' + Utilities.base64EncodeWebSafe(sig).replace(/=+$/, '');
 }
 
-function urlshortSend(email) {
-  var start = Date.now();
-  var answer = urlshortSendNow(normEmail(email), start);
-  var wait = PHD_ANSWER_MS - (Date.now() - start);
+function urlshortSend(email, ts) {
+  // the padding hides whether a mail went out, so it is counted from once Cloudflare has
+  // answered (urlshortSendNow moves clock.start): siteverify's time, the same for every
+  // address, would otherwise eat into the time that covers the mail
+  var clock = { start: Date.now() };
+  var answer = urlshortSendNow(normEmail(email), clock.start, ts, clock);
+  var wait = PHD_ANSWER_MS - (Date.now() - clock.start);
   if (wait > 0) Utilities.sleep(wait);
   return answer;
 }
 
 // As phdSendNow: the same answer whether or not the address is listed.
-function urlshortSendNow(email, now) {
+// The page's Cloudflare check (the contact form's Turnstile widget, its token sent as ts) is
+// checked with TURNSTILE_SECRET before the address is looked at, so its answer is the same for
+// every address, and a failed check takes no slot of the hourly or daily limits. Without
+// TURNSTILE_SECRET there is no check, as for the contact form. Only a token made for the page's
+// own action (URLSHORT_TS_ACTION) counts.
+var URLSHORT_TS_ACTION = 'urlshort-code';
+function urlshortHuman(token) {
+  var secret = String(PropertiesService.getScriptProperties().getProperty('TURNSTILE_SECRET') || '').trim();
+  if (!secret) return true;
+  token = String(token == null ? '' : token);
+  if (!token || token.length > 2048) return false;
+  try {
+    var resp = UrlFetchApp.fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'post', payload: { secret: secret, response: token }, muteHttpExceptions: true
+    });
+    var vr = JSON.parse(resp.getContentText());
+    return !!vr && vr.success === true && vr.action === URLSHORT_TS_ACTION;
+  } catch (e) {
+    return false;
+  }
+}
+
+function urlshortSendNow(email, now, ts, clock) {
   if (!validEmail(email)) return { ok: false, reason: 'bad-email' };
   if (!urlshortSecret()) return { ok: false, reason: 'not-set-up' };
+  if (!urlshortHuman(ts)) return { ok: false, reason: 'bot-check' };
+  if (clock) now = clock.start = Date.now();
   var listed = urlshortListed(email);
   var cache = CacheService.getScriptCache();
   var h = otpHash(email);
@@ -754,14 +809,29 @@ function urlshortTabRows() {
   return Math.min(200000, Math.max(1000, n || 100000));
 }
 
-function urlshortAppend(ss, name, cols, events) {
-  if (!events.length) return;
-  // a new tab goes last: doPost writes the contact form to the first one
+// The spreadsheet the contact form writes to: SHEET_ID if set, else the one this script
+// belongs to (opened from the Sheet with Extensions → Apps Script).
+function urlshortSpreadsheet() {
+  var sheetId = PropertiesService.getScriptProperties().getProperty('SHEET_ID') || '';
+  var ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) throw new Error('No spreadsheet to write to: open this script from the Sheet (Extensions → Apps Script), or set the Script Property SHEET_ID');
+  return ss;
+}
+
+// The tab, made if it isn't there: last, so doPost's first tab stays the contact form's, with
+// its header row frozen.
+function urlshortTab(ss, name, cols) {
   var sh = ss.getSheetByName(name) || ss.insertSheet(name, ss.getNumSheets());
   if (sh.getLastRow() === 0) {
     sh.getRange(1, 1, 1, cols.length).setValues([cols.map(function (c) { return c[0]; })]);
     sh.setFrozenRows(1);
   }
+  return sh;
+}
+
+function urlshortAppend(ss, name, cols, events) {
+  if (!events.length) return;
+  var sh = urlshortTab(ss, name, cols);
   var rows = events.map(function (e) {
     return cols.map(function (c) { var v = c[1](e); return v == null ? '' : sheetSafe(v); });
   });
@@ -771,20 +841,38 @@ function urlshortAppend(ss, name, cols, events) {
   sh.getRange(sh.getLastRow() + 1, 1, rows.length, cols.length).setValues(rows);
 }
 
+// What an answer from the log means, in words that say what to do about it.
+function urlshortWhy(code, text) {
+  var t = String(text || '');
+  if (code === 404 || code === 405) return 'karan98.in doesn\'t have the link shortener yet: merge the pull request and let its deployment finish';
+  if (code === 503 && /not-set-up/.test(t)) return 'karan98.in\'s live deployment has no URLSHORT_GATE_SECRET or no D1 database: add the secret in Cloudflare (type Secret, Production), then Deployments → ⋯ → Retry deployment';
+  if (code === 401) return 'this script\'s URLSHORT_GATE_SECRET isn\'t the same as Cloudflare\'s: copy one into the other (and retry the deployment if you changed Cloudflare\'s)';
+  // a challenge page (403, or 503 for some modes) rather than the log's own JSON
+  var challenge = /just a moment|challenge-platform|cf-chl|attention required/i.test(t);
+  if (challenge || (code === 403 && !/wrong-host/.test(t))) return 'Cloudflare stopped Google\'s call, probably Bot Fight Mode (Security → Bots): turn it off, since it can\'t be skipped for one path (on Pro and above, Super Bot Fight Mode can, with a WAF custom rule that skips it for /api/urlshort/log)';
+  if (code === 403) return 'the log answers only at karan98.in itself';
+  if (code >= 500) return 'karan98.in had a problem; the next run tries again';
+  return 'karan98.in answered in a way this script doesn\'t expect';
+}
+
 // Pulls new events into the "Short links" and "Link visits" sheets. The Function forgets events
 // only once a later call shows they arrived here (it deletes ids up to `after`), so a failed run
 // loses nothing: the next one fetches the same events again.
 // Anything that goes wrong is thrown, so the run shows as Failed on the Executions page and
 // Google's failure email says why: a Sheet that quietly stops filling would go unnoticed.
+// Returns how many events it copied, or null if another run was still going.
 function syncShortLinks() {
   var secret = urlshortSecret();
-  if (!secret) throw new Error('syncShortLinks: URLSHORT_GATE_SECRET is missing, or the same as another gate\'s');
+  if (!secret) throw new Error('syncShortLinks: add the Script Property URLSHORT_GATE_SECRET, the same value as Cloudflare\'s secret of that name (and not ICTD_GATE_SECRET\'s or PHD_GATE_SECRET\'s)');
   var lock = LockService.getUserLock(); // not the script lock, which the sign-ins hold briefly
-  if (!lock.tryLock(1000)) return;      // the previous run is still going
+  if (!lock.tryLock(1000)) {             // the previous run is still going
+    console.log('syncShortLinks: another run was still going, so this one did nothing.');
+    return null;
+  }
+  var wrote = 0;
   try {
     var props = PropertiesService.getScriptProperties();
-    var sheetId = props.getProperty('SHEET_ID') || '';
-    var ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
+    var ss = urlshortSpreadsheet();
     var key = urlshortLogKey(secret);
     for (var page = 0; page < 5; page++) {
       // "N": the Sheet has every event up to N. "N+M": a run stopped part-way through the page
@@ -797,11 +885,15 @@ function syncShortLinks() {
         payload: JSON.stringify({ after: after, limit: URLSHORT_LOG_PAGE })
       });
       if (resp.getResponseCode() !== 200) {
-        throw new Error('HTTP ' + resp.getResponseCode() + ' ' + resp.getContentText().slice(0, 200));
+        var status = resp.getResponseCode(), text = resp.getContentText();
+        throw new Error('HTTP ' + status + ': ' + urlshortWhy(status, text) + '. (It answered: ' + text.slice(0, 160) + ')');
       }
       var data;
       try { data = JSON.parse(resp.getContentText()); } catch (e) { data = null; }
-      if (!data || data.ok !== true || !Array.isArray(data.events)) throw new Error('an unexpected answer from the log');
+      if (!data || data.ok !== true || !Array.isArray(data.events)) {
+        var odd = resp.getContentText();
+        throw new Error('HTTP 200: ' + urlshortWhy(200, odd) + '. (It answered: ' + odd.slice(0, 160) + ')');
+      }
       var made = [], visits = [], last = after;
       data.events.forEach(function (ev) {
         if (!ev || typeof ev.id !== 'number') return;
@@ -813,8 +905,10 @@ function syncShortLinks() {
       if (visits.length) props.setProperty('urlshort_log_last', after + '+' + last);
       urlshortAppend(ss, 'Link visits', URLSHORT_VISIT_COLS, visits);
       props.setProperty('urlshort_log_last', String(last));
-      if (data.events.length < URLSHORT_LOG_PAGE || last === after) return;
+      wrote += made.length + visits.length;
+      if (data.events.length < URLSHORT_LOG_PAGE || last === after) return wrote;
     }
+    return wrote;
   } catch (e) {
     console.error('syncShortLinks: ' + e);   // the next run (5 minutes) picks up where this one stopped
     throw e;
@@ -823,12 +917,158 @@ function syncShortLinks() {
   }
 }
 
-// Run once from the editor (it asks for permission to manage triggers). Safe to run again.
+// Run once from the editor: it asks for permission to run on a timer and to call karan98.in.
+// Safe to run again. It also makes both tabs at once and runs a first sync, so a setup problem
+// shows right here, in words that say what to fix, instead of in a timer's failure email.
 function installShortLinkSync() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'syncShortLinks') ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('syncShortLinks').timeBased().everyMinutes(5).create();
+  var ss = urlshortSpreadsheet();
+  var made = urlshortTab(ss, 'Short links', URLSHORT_MADE_COLS), seen = urlshortTab(ss, 'Link visits', URLSHORT_VISIT_COLS);
+  var n = syncShortLinks();   // throws, saying what to fix, if karan98.in doesn't answer as it should
+  var where = 'the "Short links" and "Link visits" tabs are in "' + ss.getName() + '"';
+  var msg;
+  if (n === null) {
+    msg = 'The 5-minute timer is set and ' + where + ', but a timer run was going, so this couldn\'t check the setup just now: run syncShortLinks in a minute, or look at Executions.';
+  } else {
+    var before = parseInt(PropertiesService.getScriptProperties().getProperty('urlshort_log_last') || '0', 10) > 0 ||
+      made.getLastRow() > 1 || seen.getLastRow() > 1;
+    msg = 'All set: ' + where + ' and fill every 5 minutes. ' +
+      (n ? n + ' event' + (n === 1 ? ' was' : 's were') + ' copied just now.' :
+        before ? 'Nothing new since the last sync.' : 'Nothing has been logged yet: make a link (or open one) and it shows here within 5 minutes.');
+  }
+  console.log(msg);
+  return msg;
+}
+
+/* ------------- the Cloudflare Function's sealed relay ({ sealed }) ------------- */
+
+// The Function adds what only a server knows (the IP address, and the place and network it
+// comes from) and hands the record to the browser to post here, because Google refuses
+// Cloudflare's own calls. It seals the record first with keys derived from RELAY_SECRET,
+// which only it and this script hold, so the browser carries it but can't read or change it.
+// Apps Script has HMAC-SHA256 but no AES, so the cipher is built from HMAC; seal() in
+// functions/api/contact.js is the other half:
+//   prk        = HMAC-SHA256(key RELAY_SALT, RELAY_SECRET)                    HKDF-Extract
+//   kEnc, kMac = HMAC-SHA256(prk, 'v1 enc' 0x01), HMAC-SHA256(prk, 'v1 mac' 0x01)
+//                                                                  HKDF-Expand, 32 bytes each
+//   block i    = HMAC-SHA256(kEnc, nonce, then i as 4 bytes big-endian)   the keystream
+//   ciphertext = the UTF-8 JSON XOR block 0, block 1, …
+//   tag        = HMAC-SHA256(kMac, 0x01, nonce, ciphertext): checked before anything is decrypted
+//   sealed     = base64(0x01, nonce (16 random bytes), ciphertext, tag (32 bytes))
+var RELAY_VERSION = 1;
+var RELAY_SALT = 'karan98.in contact relay';
+var RELAY_NONCE = 16;
+var RELAY_TAG = 32;
+
+// RELAY_SECRET, and RELAY_SECRET_PREVIOUS while a rotation is under way.
+function relaySecrets(props) {
+  return ['RELAY_SECRET', 'RELAY_SECRET_PREVIOUS'].map(function (name) {
+    return String(props.getProperty(name) || '').trim();
+  }).filter(function (s) { return s; });
+}
+
+// The { token, fields, meta } inside a sealed relay, or null: not one, altered on the way,
+// or sealed with a secret this script doesn't hold.
+function openSealed(sealed, secrets) {
+  if (typeof sealed !== 'string' || !secrets.length) return null;
+  var blob;
+  try { blob = Utilities.base64Decode(sealed); } catch (e) { return null; }
+  var end = blob.length - RELAY_TAG; // where the tag starts
+  if (end < 1 + RELAY_NONCE || (blob[0] & 0xff) !== RELAY_VERSION) return null;
+  var signed = [], tag = [];
+  for (var i = 0; i < end; i++) signed.push(blob[i]);
+  for (var t = end; t < blob.length; t++) tag.push(blob[t]);
+  for (var s = 0; s < secrets.length; s++) {
+    var keys = relayKeys(secrets[s]);
+    if (!sameBytes(Utilities.computeHmacSha256Signature(signed, keys.mac), tag)) continue;
+    try {
+      var rec = JSON.parse(Utilities.newBlob(relayDecrypt(signed, keys.enc)).getDataAsString('UTF-8'));
+      return rec && typeof rec === 'object' ? rec : null;
+    } catch (e2) {
+      return null;
+    }
+  }
+  return null;
+}
+
+// HKDF-SHA256, one 32-byte block for each key. The info strings are ASCII.
+function relayKeys(secret) {
+  var prk = Utilities.computeHmacSha256Signature(secret, RELAY_SALT, Utilities.Charset.UTF_8);
+  function expand(info) {
+    var msg = [];
+    for (var i = 0; i < info.length; i++) msg.push(info.charCodeAt(i));
+    msg.push(1);
+    return Utilities.computeHmacSha256Signature(msg, prk);
+  }
+  return { enc: expand('v1 enc'), mac: expand('v1 mac') };
+}
+
+// signed is 0x01, the nonce, then the ciphertext. The plaintext comes back as the signed
+// bytes (-128 to 127) that Apps Script takes.
+function relayDecrypt(signed, kEnc) {
+  var start = 1 + RELAY_NONCE;
+  var counter = signed.slice(1, start).concat([0, 0, 0, 0]);
+  var out = [], block = null;
+  for (var at = start; at < signed.length; at++) {
+    var j = (at - start) % 32;
+    if (j === 0) {
+      var n = (at - start) / 32;
+      for (var b = 0; b < 4; b++) counter[RELAY_NONCE + b] = toByte((n >>> (24 - 8 * b)) & 0xff);
+      block = Utilities.computeHmacSha256Signature(counter, kEnc);
+    }
+    out.push(toByte((signed[at] ^ block[j]) & 0xff));
+  }
+  return out;
+}
+
+function toByte(x) { return x > 127 ? x - 256 : x; }
+
+// Every byte is compared, whichever differ, so the time taken doesn't tell how much of a
+// tag was right.
+function sameBytes(a, b) {
+  if (a.length !== b.length) return false;
+  var d = 0;
+  for (var i = 0; i < a.length; i++) d |= (a[i] ^ b[i]) & 0xff;
+  return d === 0;
+}
+
+// A { sealed } that doesn't open is refused, and the sender can't know: the browser posts
+// it without reading the answer. Usually RELAY_SECRET here isn't the Function's, or is
+// missing, so say so by email, at most once every 6 hours. Anyone can post a made-up one,
+// and that is reported too. While the mark is there, nothing more is done: no lock, so a
+// stream of made-up ones doesn't hold up the sign-ins that wait on it. Without the mark, it
+// is checked again under the script lock, so runs that overlap send one email, not one each.
+function relayAlert(recipient, props) {
+  console.error('doPost: a sealed relay did not open');
+  try {
+    var cache = CacheService.getScriptCache();
+    if (cache.get('relay_alert')) return;      // told already
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(1000)) return;           // another run holds it; a later relay tries again
+    try {
+      if (cache.get('relay_alert')) return;
+      cache.put('relay_alert', '1', 21600);
+    } finally {
+      lock.releaseLock();
+    }
+    var why = relaySecrets(props).length
+      ? 'Its RELAY_SECRET (and RELAY_SECRET_PREVIOUS, if set) did not open it: the Cloudflare secret RELAY_SECRET holds another value, or the message was altered on the way.'
+      : 'This script has no RELAY_SECRET Script Property.';
+    MailApp.sendEmail({
+      to: recipient,
+      subject: 'karan98.in contact form: a message could not be opened',
+      body: 'A sealed message reached the contact form\'s Apps Script and could not be opened, ' +
+        'so it was neither saved nor emailed. Its sender was shown "Message sent".\n\n' + why + '\n\n' +
+        'If you have just set or changed RELAY_SECRET, give the Script Property and the Cloudflare ' +
+        'secret the same value, then retry the latest production deployment in Cloudflare ("Sealed relay" in ' +
+        'CONTACT_FORM_SETUP.md). Anyone can post a made-up message here, so if a test message ' +
+        'from the site arrives, nothing is wrong.\n\nThis notice is sent at most once every 6 hours.',
+      name: 'karan98.in contact form'
+    });
+  } catch (e) { /* the answer is the same either way */ }
 }
 
 /* ------------------------------- helpers --------------------------------- */
