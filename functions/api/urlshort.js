@@ -66,7 +66,7 @@
    ========================================================================== */
 
 import { SITE_HOSTS, logEvent, cut, sha256, hmacSha256, b64url, sameSecret } from "../_lib/urlshort.js";
-import { endingRefused, codeRefused, linkRefused, familyBlocks } from "../_lib/urlshort-filter.js";
+import { endingRefused, codeRefused, linkRefused, familyBlocks, dnsName } from "../_lib/urlshort-filter.js";
 
 const PREFIX = "s:";
 const ALPHABET = "23456789abcdefghjkmnpqrstuvwxyz"; // 31 characters
@@ -150,6 +150,8 @@ const isOver = (md, now) => endsOf(md) > 0 && now >= endsOf(md);
 // The long URL as typed → a URL object, or the reason it can't be kept:
 // "bad-url", "too-long" or "credentials". "example.com/page" gets https://.
 // Only http(s) links to a real, dotted host (or an IP literal) are kept.
+// A host no DNS name can be ("www..example.com", a "*" in it) is a bad URL too: the
+// link would lead nowhere, and the filter couldn't ask about it.
 function normalizeUrl(raw) {
   if (typeof raw !== "string") return "bad-url";
   let s = raw.trim();
@@ -173,6 +175,7 @@ function normalizeUrl(raw) {
   if (u.username || u.password) return "credentials";
   const h = u.hostname;
   if (!h || (h.indexOf(".") < 0 && h.indexOf(":") < 0)) return "bad-url"; // "localhost", "intranet"
+  if (h.charAt(0) !== "[" && !dnsName(h)) return "bad-url";
   if (u.href.length > MAX_URL) return "too-long";  // é and the like grow when encoded
   return u;
 }

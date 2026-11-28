@@ -8,7 +8,7 @@
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { endingRefused, codeRefused, linkRefused, dnsQuery, dnsAnswer, familyBlocks } from "../functions/_lib/urlshort-filter.js";
+import { endingRefused, codeRefused, linkRefused, dnsQuery, dnsAnswer, familyBlocks, dnsName } from "../functions/_lib/urlshort-filter.js";
 import { onRequest } from "../functions/api/urlshort.js";
 
 const b64url = bytes => Buffer.from(bytes).toString("base64url");
@@ -66,7 +66,10 @@ test("a random code that spells a word anywhere in it is refused", () => {
 
 test("long links with a word in the host or path are refused; adult top-level domains too", () => {
   for (const s of ["https://example.com/fuck-this", "https://www.pornhub.com/view", "https://free-sex.example/",
-    "https://f-u-c-k.example.com/", "https://www.reddit.com/r/nsfw/", "https://example.com/%66uck", "https://example.com/a/sh1t"]) {
+    "https://f-u-c-k.example.com/", "https://www.reddit.com/r/nsfw/", "https://example.com/%66uck", "https://example.com/a/sh1t",
+    // one escape that doesn't decode doesn't hide the others, before or after them
+    "https://example.com/%66%75%63%6B%", "https://www.reddit.com/r/%6Esfw/%FF", "https://example.com/%E0%A4%A/f%75ck",
+    "https://example.com/%zz/%66uck", "https://example.com/%70%6F%72%6E%FF"]) {
     assert.equal(linkRefused(new URL(s)), "blocked-words", s);
   }
   for (const s of ["https://anything.xxx/", "https://site.porn/x", "https://x.adult", "https://y.sex/", "https://z.XXX./"]) {
@@ -76,6 +79,9 @@ test("long links with a word in the host or path are refused; adult top-level do
     "https://en.wikipedia.org/wiki/Essex", "https://www.matsushita.co.jp/", "https://karan98.in/resume",
     "https://data.gov.in/", "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "https://www.dickssportinggoods.com/",
     "https://example.com/%E0%A4%A", // a broken escape is read as sent
+    "https://example.com/caf%E9/class%2Fnotes", "https://example.com/%F0%9F%91%8D%E2%80%8D/glass", // Latin-1, an emoji
+    "https://example.com/%2566uck", // decoded once, as a server does: "%66uck"
+    "https://example.com/the%E2%80%8Bpen%E2%80%8Bis-mightier", // words apart, as with hyphens
     "https://example.com/?q=porn"]) { // the query isn't read: mostly ids and tracking
     assert.equal(linkRefused(new URL(s)), "", s);
   }
@@ -193,6 +199,21 @@ test("the API refuses a rude ending, a rude link and an adult site, stores nothi
 test("the API makes nothing when the resolver can't be asked", async () => {
   assert.deepEqual(await make({ url: "https://down.example/", slug: "fine-ending" }), { status: 503, body: { ok: false, error: "check-failed" } });
   assert.equal(kv.m.size, 0);
+});
+
+test("a host no DNS name can be is a bad URL, not a resolver outage, and nobody is asked", async () => {
+  const NOT_NAMES = ["www..example.com", "a*b.example.com", "exa!mple.com", "a".repeat(64) + ".com", "x." + "abcdefghi.".repeat(26) + "com"];
+  for (const h of NOT_NAMES) {
+    assert.equal(dnsName(h), false, h);
+    assert.deepEqual(await make({ url: "https://" + h + "/page" }), { status: 400, body: { ok: false, error: "bad-url" } }, h);
+  }
+  assert.equal(doh.asked.length, 0);
+  assert.equal(kv.m.size, 0);
+  // still names: a trailing dot, an underscore, digits, and an international name as URL parsing writes it
+  for (const h of ["example.com.", "ex_ample.com", "192.0.2.7", "xn--bcher-kva.example", "a".repeat(63) + ".com"]) assert.equal(dnsName(h), true, h);
+  assert.equal((await make({ url: "https://bücher.example/" })).status, 200);
+  assert.equal((await make({ url: "https://ex_ample.com/" })).status, 200);
+  assert.equal((await make({ url: "https://[2001:db8::1]/" })).status, 200);
 });
 
 test("the API makes an ordinary link, after asking about its host", async () => {

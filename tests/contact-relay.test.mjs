@@ -274,6 +274,41 @@ test("a relay that doesn't open tells the owner once, not for every one", async 
   assert.equal(gs.messageMails().length, 1);
 });
 
+test("the alert: one email for runs that overlap, no lock while it's marked, and no mail floor", async () => {
+  const props = { TURNSTILE_SECRET: "x", RECIPIENT: "owner@example.com" };
+  // It goes even with 15 sends left: while the relay is broken no notifications go out, so
+  // the sends kept for them have nothing to protect, and anyone could use the day up to there.
+  const low = loadCodeGs({ props, quota: 15 });
+  let tries = 0, held = false;
+  low.ctx.LockService = { getScriptLock: () => ({ tryLock: () => (tries++, held ? false : (held = true)), waitLock() {}, releaseLock() { held = false; } }) };
+  assert.deepEqual(low.post({ sealed: "junk" }), { ok: false, error: "bad-seal" });
+  assert.equal(low.mails.length, 1);
+  assert.equal(held, false, "the lock is released");
+  // while it's marked, made-up relays take no lock, which the sign-ins wait on
+  for (let i = 0; i < 20; i++) low.post({ sealed: "junk" });
+  assert.equal(tries, 1);
+  assert.equal(low.mails.length, 1);
+  assert.equal(low.logs.filter(l => l.level === "error").length, 21, "each one is still logged");
+  // another run holds the lock: this one sends nothing and leaves no mark, so a later relay tries again
+  const busy = loadCodeGs({ props });
+  let released = 0;
+  busy.ctx.LockService = { getScriptLock: () => ({ tryLock: () => false, waitLock() { throw new Error("busy"); }, releaseLock() { released++; } }) };
+  assert.deepEqual(busy.post({ sealed: "junk" }), { ok: false, error: "bad-seal" });
+  assert.equal(busy.mails.length, 0);
+  assert.equal(busy.cache.has("relay_alert"), false);
+  assert.equal(released, 0, "a lock it didn't get isn't released");
+  // runs that overlap: another one marks it between this run's first look and its lock
+  const race = loadCodeGs({ props });
+  let looks = 0;
+  race.ctx.CacheService = { getScriptCache: () => ({
+    get: k => { if (k === "relay_alert" && looks++ === 0) { race.cache.set(k, "1"); return null; } return race.cache.has(k) ? race.cache.get(k) : null; },
+    put: (k, v) => { race.cache.set(k, String(v)); },
+    remove: k => { race.cache.delete(k); },
+  }) };
+  race.post({ sealed: "junk" });
+  assert.equal(race.mails.length, 0, "the run that marked it sends the email, not this one");
+});
+
 test("rollout: without RELAY_SECRET the Function still sends the older relay, which Code.gs takes", async () => {
   const fn = await viaFunction({});
   assert.equal(fn.json.ok, true);
@@ -313,6 +348,23 @@ test("rotation: RELAY_SECRET_PREVIOUS opens relays sealed with the old secret un
   const after = Object.assign({}, PROPS, { RELAY_SECRET: NEW });
   assert.deepEqual(loadCodeGs({ props: after }).post(relayBody(fromOld)), { ok: false, error: "bad-seal" });
   assert.deepEqual(loadCodeGs({ props: after }).post(relayBody(fromNew)), { ok: true });
+});
+
+test("rotation: a message sealed with the old secret says so, so RELAY_SECRET_PREVIOUS is kept until the deployment has the new one", async () => {
+  const OLD = SECRET, NEW = "test-only-" + randomBytes(32).toString("hex");
+  const during = Object.assign({}, PROPS, { RELAY_SECRET: NEW, RELAY_SECRET_PREVIOUS: OLD });
+  const NOTE = "Sealed with RELAY_SECRET_PREVIOUS";
+  const viaOld = loadCodeGs({ props: during });
+  assert.deepEqual(viaOld.post(relayBody((await viaFunction({ RELAY_SECRET: OLD })).json)), { ok: true });
+  assert.ok(viaOld.messageMails()[0].htmlBody.includes(NOTE), "the email says the old secret sealed it");
+  assert.ok(viaOld.logs.some(l => l.level === "warn" && /RELAY_SECRET_PREVIOUS/.test(l.text)));
+  assert.equal(viaOld.records()[0]["Name"], FIELDS.name, "the message itself is kept as usual");
+  for (const props of [during, PROPS]) { // sealed with the new secret, during and after the rotation
+    const viaNew = loadCodeGs({ props });
+    assert.deepEqual(viaNew.post(relayBody((await viaFunction({ RELAY_SECRET: props.RELAY_SECRET })).json)), { ok: true });
+    assert.ok(!viaNew.messageMails()[0].htmlBody.includes(NOTE));
+    assert.ok(!viaNew.logs.some(l => l.level === "warn"));
+  }
 });
 
 test("a secret pasted with spaces or a newline around it still matches", async () => {

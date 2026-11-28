@@ -127,15 +127,24 @@ export function codeRefused(code) {
   return readings(String(code).toLowerCase()).some(r => ANYWHERE_RE.test(r) || WORD_ANYWHERE_RE.test(r));
 }
 
+// The path as a reader sees it. Each run of escapes is decoded once, on its own, so one
+// that doesn't decode (a stray "%", or "%FF") can't keep the others hidden: bytes that
+// aren't UTF-8 become U+FFFD, which reads as a gap. "%2566" stays "%66", as a server reads it.
+function readablePath(path) {
+  return path.replace(/(?:%[0-9a-f]{2})+/gi, run => {
+    try { return decodeURIComponent(run); } catch (e) {
+      return new TextDecoder().decode(Uint8Array.from(run.slice(1).split("%"), h => parseInt(h, 16)));
+    }
+  });
+}
+
 // The long link, as a URL: "blocked-site" for an adult top-level domain, "blocked-words"
 // for a word in its host name or path, or "". The query and the fragment aren't read:
 // they are mostly ids and tracking.
 export function linkRefused(u) {
   const host = u.hostname.toLowerCase().replace(/\.$/, "");
   if (ADULT_TLDS.indexOf(host.slice(host.lastIndexOf(".") + 1)) >= 0) return "blocked-site";
-  let path = u.pathname;
-  try { path = decodeURIComponent(path); } catch (e) { /* read it as sent */ }
-  return rudeText(host) || rudeText(path) ? "blocked-words" : "";
+  return rudeText(host) || rudeText(readablePath(u.pathname)) ? "blocked-words" : "";
 }
 
 /* ---- Cloudflare's family resolver, over DNS-over-HTTPS (RFC 8484) ---------------- */
@@ -153,6 +162,13 @@ export function dnsQuery(name) {
   bytes.push(0, 0, 1, 0, 1); // the root, then type A, class IN
   if (bytes.length > 12 + 255 + 4) throw new Error("name too long");
   return new Uint8Array(bytes);
+}
+
+// true when the resolver can be asked about `name` (a trailing dot is dropped, as in
+// familyBlocks). Anything else, such as an empty label ("www..example.com"), a label over
+// 63 characters or a "*", is no name the DNS can hold: a link to it leads nowhere.
+export function dnsName(name) {
+  try { dnsQuery(String(name).toLowerCase().replace(/\.$/, "")); return true; } catch (e) { return false; }
 }
 
 // The response code of a DNS answer, and the addresses in its A records.

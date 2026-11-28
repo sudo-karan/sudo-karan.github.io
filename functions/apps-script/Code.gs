@@ -79,7 +79,9 @@
                             1,000–200,000 (default 100,000)
 
    Deploy: Web app · Execute as: Me · Who has access: Anyone.
-   After pasting: run doPost once → Allow all permissions → Deploy → New version.
+   After pasting: run doPost once → Allow all permissions → Deploy → Manage deployments →
+   ✏️ Edit → Version: New version → Deploy. (Not New deployment: that makes a new /exec URL,
+   which the site doesn't call, so the old code would stay live.)
    NOTE: this version adds an "Email verified" column — if the Sheet holds an older
    header, clear the Sheet once (select all → delete) so the new header writes fresh.
    ========================================================================== */
@@ -117,7 +119,7 @@ function doPost(e) {
     var sheetId = props.getProperty('SHEET_ID') || '';
 
     var body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
-    var f, m;
+    var f, m, oldSeal = false;
 
     if (body.secret != null) {
       if (!sharedSecret || body.secret !== sharedSecret) return out({ ok: false, error: 'unauthorized' });
@@ -126,8 +128,13 @@ function doPost(e) {
       // Both carry the same { token, fields, meta }; only the wrapping differs.
       var inner;
       if (body.sealed != null) {
-        inner = openSealed(body.sealed, relaySecrets(props));
+        var secrets = relaySecrets(props);
+        inner = openSealed(body.sealed, secrets);
         if (!inner) { relayAlert(recipient, props); return out({ ok: false, error: 'bad-seal' }); }
+        // While rotating: sealed with the old value only? Then the live Cloudflare deployment
+        // doesn't have the new one yet, and RELAY_SECRET_PREVIOUS has to stay. The email says so.
+        oldSeal = secrets.length > 1 && !openSealed(body.sealed, secrets.slice(0, 1));
+        if (oldSeal) console.warn('doPost: a relay sealed with RELAY_SECRET_PREVIOUS: the live Cloudflare deployment still has the old RELAY_SECRET');
       } else {
         inner = JSON.parse(deob(body.obf, obfKey));
       }
@@ -221,6 +228,10 @@ function doPost(e) {
     }
 
     var html = '<h2 style="font-family:Arial,sans-serif;color:#4c1d95">New message from karan98.in</h2>' +
+      (oldSeal ? '<p style="font-family:Arial,sans-serif;font-size:14px;color:#b45309"><b>Sealed with ' +
+        'RELAY_SECRET_PREVIOUS.</b> The live Cloudflare deployment still has the old RELAY_SECRET: ' +
+        'retry the latest production deployment, and keep RELAY_SECRET_PREVIOUS until a message ' +
+        'arrives without this note.</p>' : '') +
       '<table cellpadding="6" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px">';
     FIELDS.forEach(function (fld) {
       var v = rec[fld[1]];
@@ -1027,13 +1038,22 @@ function sameBytes(a, b) {
 // A { sealed } that doesn't open is refused, and the sender can't know: the browser posts
 // it without reading the answer. Usually RELAY_SECRET here isn't the Function's, or is
 // missing, so say so by email, at most once every 6 hours. Anyone can post a made-up one,
-// and that is reported too.
+// and that is reported too. While the mark is there, nothing more is done: no lock, so a
+// stream of made-up ones doesn't hold up the sign-ins that wait on it. Without the mark, it
+// is checked again under the script lock, so runs that overlap send one email, not one each.
 function relayAlert(recipient, props) {
   console.error('doPost: a sealed relay did not open');
   try {
     var cache = CacheService.getScriptCache();
-    if (cache.get('relay_alert')) return;
-    cache.put('relay_alert', '1', 21600);
+    if (cache.get('relay_alert')) return;      // told already
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(1000)) return;           // another run holds it; a later relay tries again
+    try {
+      if (cache.get('relay_alert')) return;
+      cache.put('relay_alert', '1', 21600);
+    } finally {
+      lock.releaseLock();
+    }
     var why = relaySecrets(props).length
       ? 'Its RELAY_SECRET (and RELAY_SECRET_PREVIOUS, if set) did not open it: the Cloudflare secret RELAY_SECRET holds another value, or the message was altered on the way.'
       : 'This script has no RELAY_SECRET Script Property.';
@@ -1043,7 +1063,7 @@ function relayAlert(recipient, props) {
       body: 'A sealed message reached the contact form\'s Apps Script and could not be opened, ' +
         'so it was neither saved nor emailed. Its sender was shown "Message sent".\n\n' + why + '\n\n' +
         'If you have just set or changed RELAY_SECRET, give the Script Property and the Cloudflare ' +
-        'secret the same value, then retry the latest Cloudflare deployment ("Sealed relay" in ' +
+        'secret the same value, then retry the latest production deployment in Cloudflare ("Sealed relay" in ' +
         'CONTACT_FORM_SETUP.md). Anyone can post a made-up message here, so if a test message ' +
         'from the site arrives, nothing is wrong.\n\nThis notice is sent at most once every 6 hours.',
       name: 'karan98.in contact form'

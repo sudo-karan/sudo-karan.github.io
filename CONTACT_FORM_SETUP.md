@@ -132,18 +132,29 @@ address, place and ISP that Cloudflare sees) for the browser to post to the Apps
 With `RELAY_SECRET` set on both sides, that blob is **sealed**: encrypted and signed with
 keys derived from a secret the page never sees. DevTools then shows only
 `{"ok":true,"sealed":"…"}`, which nothing in the page decodes. The browser can't change it
-either: the Apps Script refuses a blob whose signature doesn't match. Without
-`RELAY_SECRET` on Cloudflare, the Function sends the older `relay`, which anyone can decode
-with `OBF_KEY` from `app.js`.
+either: the Apps Script refuses a blob whose signature doesn't match. That protects the
+sealed blob only: the Apps Script still takes `{obf}`, which anyone can build, and a row
+doesn't say which of the two arrived, so a row's IP and place are no more trustworthy than
+before. Without `RELAY_SECRET` on Cloudflare, the Function sends the older `relay`, which
+anyone can decode with `OBF_KEY` from `app.js`.
 
-**Set it up once, in this order** (merge the pull request that brings this `Code.gs` first: it
-is safe here, and the link shortener's bot check needs the new page live before this
-`Code.gs`, see `URLSHORT_SETUP.md`):
+**Set it up once, in this order** (merge the pull request that brings this `Code.gs` first,
+and wait until its production deployment is live: that is safe here, and the link
+shortener's bot check needs the new page live before this `Code.gs`, see `URLSHORT_SETUP.md`):
 1. Make the secret: `openssl rand -hex 32`. Keep it out of the repository and the page.
 2. **The Apps Script first.** Paste this `Code.gs`, add the Script Property `RELAY_SECRET`
    with the value, then **Deploy → Manage deployments → ✏️ Edit → Version: New version →
-   Deploy** (the `/exec` URL stays the same). This `Code.gs` still takes the older `{obf}`
-   relay, so nothing changes yet.
+   Deploy** (the `/exec` URL stays the same; **New deployment** would make a new URL, which
+   the site doesn't call). This `Code.gs` still takes the older `{obf}` relay, so nothing
+   changes yet.
+   **Make sure the new code is live** before step 3. Open
+   `https://script.google.com/macros/s/AKfycbx-6-WldWnNAUi5_32S-lzvAVF2ndzKoatiOGCeaAVbYQLNilbpnyMo2dE46pn7hXAO/exec?app=urlshort&action=send-code&email=nobody@example.com`
+   (the web app's URL from `assets/js/data.js`, plus a code request without a bot-check token).
+   After a few seconds this `Code.gs` answers `{"ok":false,"reason":"bot-check","app":"urlshort"}`.
+   Anything else means the older code is still live: open **Manage deployments** again. (The
+   older code answers `{"ok":true,…}` and mails nothing, since that address isn't on the allow
+   list, but it uses one of the day's code slots. The check tells the two apart only while
+   `TURNSTILE_SECRET` and the link shortener's `URLSHORT_GATE_SECRET` are both set.)
 3. **Then Cloudflare.** **Workers & Pages → sudo-karan-github-io → Settings → Variables and
    Secrets → Add**, type **Secret**, name `RELAY_SECRET`, the same value, for
    **Production** (and **Preview**, if you test the form on previews). Then redeploy:
@@ -154,6 +165,15 @@ is safe here, and the link shortener's bot check needs the new page live before 
 4. **Check it.** On karan98.in, with DevTools → Network open, send yourself a message. The
    answer from `/api/contact` is `{"ok":true,"sealed":"…"}`, with no `relay`; the POST to
    `script.google.com` carries `{"sealed":"…"}`; the row and the email arrive as before.
+   **If they don't arrive:**
+   - An email titled "a message could not be opened" means the two `RELAY_SECRET` values
+     differ: make them the same, and retry the latest production deployment.
+   - No such email means the web app still runs an older `Code.gs`: redo step 2 on the
+     deployment whose `/exec` URL is the one in `assets/js/data.js` (its check shows when it
+     has taken). That takes effect at once.
+   - To stop losing messages while you look, delete `RELAY_SECRET` in Cloudflare
+     (**Settings → Variables and Secrets**) and retry the latest production deployment: the
+     Function goes back to the older relay, which every `Code.gs` takes.
 
 Merging the pull request before steps 2 and 3 is safe, and needed for the link shortener:
 until Cloudflare has `RELAY_SECRET`, the Function keeps sending the older relay, which every
@@ -172,8 +192,13 @@ Script's **Executions** page each time.
    property `RELAY_SECRET_PREVIOUS`, then set `RELAY_SECRET` to the new value. Properties are
    read on every request, so this needs no new deployment, and the script now opens relays
    sealed with either value.
-3. In Cloudflare, set `RELAY_SECRET` to the new value and retry the latest deployment.
-4. Send a test message. Once it arrives, delete `RELAY_SECRET_PREVIOUS`.
+3. In Cloudflare, set `RELAY_SECRET` to the new value for **Production** (and **Preview**, if
+   you set it there), then **Deployments → ⋯ → Retry deployment** on the latest production
+   deployment, and wait until it has finished.
+4. Send yourself a test message. If its email has the note "Sealed with RELAY_SECRET_PREVIOUS"
+   under the heading, the live deployment still has the old value: retry the latest production
+   deployment again, and send another once it has finished. When a test message arrives
+   without that note, delete `RELAY_SECRET_PREVIOUS`.
 
 Step 2 must come before step 3, or the messages sent in between are dropped. Whoever has
 an old secret can read the relays sealed with it that they captured, so rotating protects

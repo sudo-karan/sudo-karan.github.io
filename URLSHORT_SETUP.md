@@ -78,8 +78,16 @@ contact form) to be added.
    - Links can only be made or deleted at karan98.in itself: pull-request previews and older
      deployments at `*.pages.dev` addresses refuse to.
 5. **Set up the Apps Script** (the contact form's: open the Sheet → **Extensions → Apps Script**).
+   - **Updating a shortener that's already live?** Do step 6 first: merge the pull request and
+     wait until its production deployment is live. Then do this step, and reload any
+     `/urlshort` tab that was open from before. This code refuses a code request without the
+     page's Cloudflare token, which an older page doesn't send, while the older code simply
+     ignores the token.
    - Replace the code with [`functions/apps-script/Code.gs`](functions/apps-script/Code.gs).
    - **Project Settings → Script properties**, add:
+     - `RELAY_SECRET`: the contact form's, made with `openssl rand -hex 32`. It goes in here,
+       with this `Code.gs`, and in Cloudflare only once this version is deployed
+       (`CONTACT_FORM_SETUP.md`, "Sealed relay", steps 2 and 3).
      - `URLSHORT_GATE_SECRET`: the same value as in Cloudflare.
      - `URLSHORT_WHITELIST`: the addresses allowed to make links, comma- or newline-separated.
      - `URLSHORT_PASS_HOURS` (optional): how long a code keeps someone signed in on their
@@ -97,13 +105,8 @@ contact form) to be added.
      401 until both secrets are set and match.
    - Then **Deploy → Manage deployments → ✎ Edit → Version: New version → Deploy.** The web
      app's URL stays the same. (Approving first means the sign-in never runs without the
-     permissions this code needs.)
-   - **If the shortener is already live with an older page,** update the page first (merge its
-     pull request and let it deploy), then paste this `Code.gs`: this code refuses a code request
-     without the page's Cloudflare token, which an older page doesn't send, while the older code
-     simply ignores the token. Reload any `/urlshort` tab that was open from before. The contact
-     form's `RELAY_SECRET` goes in at the same time as this `Code.gs`, and only afterwards in
-     Cloudflare (`CONTACT_FORM_SETUP.md`, "Sealed relay").
+     permissions this code needs.) Not **New deployment**: that makes a new URL, which the
+     site doesn't call, so the older code would stay live.
 6. **Deploy.**
    - Production deploys from `main`: merging the pull request that has the bindings deploys
      karan98.in. (A push to another branch only builds a preview at a `*.pages.dev` address.)
