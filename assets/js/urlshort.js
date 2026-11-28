@@ -47,6 +47,10 @@
     email: 'That looks like an email address. Paste a web link instead.',
     badSlug: 'Use 3–40 letters, numbers or hyphens, with no hyphen at either end.',
     slugTaken: 'That ending is already taken. Try another, or leave it blank.',
+    blockedSlug: 'That ending isn’t allowed: endings can’t have swear words, slurs or adult terms in them. Try another, or leave it blank.',
+    blockedWords: 'That link can’t be shortened here: its address has a swear word, a slur or an adult term in it.',
+    blockedSite: 'Links to adult sites, or to sites flagged as harmful, can’t be shortened here.',
+    checkFailed: 'Couldn’t check that link just now. Please try again in a minute.',
     needKey: 'Enter the owner key to continue.',
     badKey: 'That key didn’t work. Check it and try again.',
     staleKey: 'The remembered key didn’t work. Enter the current one.',
@@ -1179,6 +1183,10 @@
       else if (err === 'self-link') setError('url', MSG.selfLink);
       else if (err === 'bad-slug') setError('slug', slugProblem(slug) || MSG.badSlug);
       else if (err === 'slug-taken') setError('slug', slug ? 'karan98.in/s/' + slug + ' is already taken. Try another, or leave it blank.' : MSG.slugTaken);
+      else if (err === 'blocked-slug') setError('slug', MSG.blockedSlug);
+      else if (err === 'blocked-words') setError('url', MSG.blockedWords);
+      else if (err === 'blocked-site') setError('url', MSG.blockedSite);
+      else if (err === 'check-failed') showNote(MSG.checkFailed, true);
       else if (err === 'bad-ttl') ttlProblem(MSG.badTtl);
       else if (err === 'unauthorized' || err === 'pass-expired') {
         pendingCreate = true;   // made once signed in again
